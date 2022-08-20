@@ -15,17 +15,18 @@ Unlike conventional IR sensors, the VL53L5CX allows absolute distance measuremen
 Multizone distance measurements are possible up to 8x8 zones with a wide 63° diagonal FoV which can be reduced by software. The VL53L5CX is able to detect different objects within the FoV.
 
 <p align="center">
-  <img src="./Images/VL53L5CX-SATEL.webp" width="200">
+  <img src="./Images/VL53L5CX-SATEL.webp" width="200"><br>
+  <B>Shown: The Satel Breakout Board package</B>
 </p>
 
 ### Purchase
 
 This sensor is available in a number of forms from a number of sources:
 
-- [DigiKey](https://www.digikey.com/en/product-highlight/s/stmicroelectronics/vl53l5cx-time-of-flight-ranging-sensor)
-- [Mouser](https://www.mouser.com/new/stmicroelectronics/stm-vl53l5cx-tof-sensor/)
-- [Pololu](https://www.pololu.com/product/3417)
-- [sparkfun](https://www.sparkfun.com/products/18642)
+- [DigiKey](https://www.digikey.com/en/product-highlight/s/stmicroelectronics/vl53l5cx-time-of-flight-ranging-sensor) - Satel breakout, plus other forms
+- [Mouser](https://www.mouser.com/new/stmicroelectronics/stm-vl53l5cx-tof-sensor/) - Satel breakout, plus other forms
+- [Pololu](https://www.pololu.com/product/3417) - carrier board + voltage regulator
+- [sparkfun](https://www.sparkfun.com/products/18642) - carrier board w/QWIIC interface
 
 
 ## P2 Driver for the VL53L5CX Time-of-Flight Sensor
