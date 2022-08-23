@@ -60,24 +60,28 @@ CON { basic constants }
     OUTBIT_P0_5_BIT05 = pcf8575.BIT_P05
     OUTBIT_P1_4_BIT12 = pcf8575.BIT_P14
 
+    TEST_WORD_CT    = 4
+
 OBJ { our sensors }
 
     pcf8575     : "isp_pcf8575"                 ' our device under test
     tvDebug     : "isp_hdmi_debug"              ' Our HDMI display
 
 VAR
-    long    cog
+    LONG    cog
 
 DAT { run-time condition vars }
 
-    bUseHDMI        long    FALSE        ' set to TRUE to enable HDMI use/output
-    showHDMIDebug   long    FALSE
+    bUseHDMI        LONG    FALSE        ' set to TRUE to enable HDMI use/output
+    showHDMIDebug   LONG    FALSE
 
-    senseStack      long    0[64]
+    senseStack      LONG    0[64]
 
-    senseCog        long    0
+    senseCog        LONG    0
 
-    screenTitle    byte    "-- PCF8575 object Debug --", 0
+    readArray       WORD   0[TEST_WORD_CT]
+
+    screenTitle     BYTE    "-- PCF8575 object Debug --", 0
 
 CON { -------------- MAIN -------------- }
 
@@ -112,19 +116,22 @@ PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupV
     toggleBit(OUTBIT_P1_4_BIT12)
     toggleBit(OUTBIT_P1_4_BIT12)
 
-    testWord := \pcf8575.getInputBits()
-    debug(`demoLog 'show input pins `sbin_word(testWord)' 10)
-
-    toggleBit(OUTBIT_P1_4_BIT12)
-
     bHaveINT := \pcf8575.getIntPinState()
     debug(`demoLog 'check INT `sdec(bHaveINT)' 10)
 
+    'testWord := \pcf8575.getInputBits()
+    statusOK := \pcf8575.getInputBitsNTimes(@readArray, TEST_WORD_CT)
+    if statusOK == pcf8575.READ_ERROR
+        debug(`demoLog '- read ERROR' 10)
+    else
+        debug(`demoLog 'show input pins: `UHEX_WORD_ARRAY(@readArray, TEST_WORD_CT)' 10)
+
+    toggleBit(OUTBIT_P1_4_BIT12)
+    toggleBit(OUTBIT_P0_5_BIT05)
+    toggleBit(OUTBIT_P1_4_BIT12)
+
     repeat  ' hold here
 
-
-
-    \pcf8575.setBitDirection(OUTBIT_P0_5_BIT05, pcf8575.BIT_IS_OUTPUT)
 
 PUB setBit(bitNbr, bitValue)
     debug(`demoLog 'set BIT-#`(bitNbr) to `(bitValue)' 10)
@@ -147,6 +154,7 @@ PRI initExpander(pinSCL, pinSDA, pinINT) : ok | deviceFound
     ok := true
     if(deviceFound <> pcf8575.DVC_NOT_FOUND)
         debug(`demoLog 'Found Addr-`$(deviceFound)' 10)
+        ' NOT NEEDED  pcf8575.writeWord($FFFF)    ' set all bits to input
     else
         debug(`demoLog 'ERROR: Found no devices' 10)
         ok := false
@@ -160,37 +168,37 @@ CON { --- TASK: keep live mpu9dof data --- }
 
 VAR { captured sensor data }
 
-    long rawMagX
-    long rawMagY
-    long rawMagZ
-    long magX
-    long magY
-    long magZ
+    LONG rawMagX
+    LONG rawMagY
+    LONG rawMagZ
+    LONG magX
+    LONG magY
+    LONG magZ
 
-    long rawAccelX
-    long rawAccelY
-    long rawAccelZ
-    long accelX
-    long accelY
-    long accelZ
+    LONG rawAccelX
+    LONG rawAccelY
+    LONG rawAccelZ
+    LONG accelX
+    LONG accelY
+    LONG accelZ
 
-    long rawGyroX
-    long rawGyroY
-    long rawGyroZ
-    long gyroX
-    long gyroY
-    long gyroZ
+    LONG rawGyroX
+    LONG rawGyroY
+    LONG rawGyroZ
+    LONG gyroX
+    LONG gyroY
+    LONG gyroZ
 
-    long roll
-    long pitch
-    long yaw
-    long unused0
-    long unused1
-    long senseTimeMS
+    LONG roll
+    LONG pitch
+    LONG yaw
+    LONG unused0
+    LONG unused1
+    LONG senseTimeMS
 
-    long ticks1ms
-    long ticks1us
-    long ticks125ms
+    LONG ticks1ms
+    LONG ticks1us
+    LONG ticks125ms
 
 PRI taskReadSensor() | startTicks, startMS, statusOK
     ' start for this cog too
@@ -240,8 +248,8 @@ PRI taskReadSensor() | startTicks, startMS, statusOK
 
 DAT { cal data }
 
-accelBiasXYZ long    0[3]
-gyroBiasXYZ long    0[3]
+accelBiasXYZ LONG    0[3]
+gyroBiasXYZ LONG    0[3]
 '}
 PRI calibrateSensor()
     ' put sensor thru calibration paces
@@ -307,23 +315,23 @@ DAT { demo1 data: sample names }
 
 {
 
-sample0 byte    "top",0
-sample1 byte    "toLeft",0
-sample2 byte    "toRight",0
-sample3 byte    "PCF8575ront",0
-sample4 byte    "toBack",0
-sample5 byte    "bottom",0
+sample0 BYTE    "top",0
+sample1 BYTE    "toLeft",0
+sample2 BYTE    "toRight",0
+sample3 BYTE    "PCF8575ront",0
+sample4 BYTE    "toBack",0
+sample5 BYTE    "bottom",0
 
 ' float conversion crap
-tmpIntX     long    0
-tmpDecimalX long    0
-pSignX      long    0
-tmpIntY     long    0
-tmpDecimalY long    0
-pSignY      long    0
-tmpIntZ     long    0
-tmpDecimalZ long    0
-pSignZ      long    0
+tmpIntX     LONG    0
+tmpDecimalX LONG    0
+pSignX      LONG    0
+tmpIntY     LONG    0
+tmpDecimalY LONG    0
+pSignY      LONG    0
+tmpIntZ     LONG    0
+tmpDecimalZ LONG    0
+pSignZ      LONG    0
 
 sampleNames LONG    @sample0, @sample1, @sample2, @sample3, @sample4, @sample5
 
@@ -505,10 +513,10 @@ PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVar
 '' Return pointers to HDMI-debug data structures for this motor-object instance
     loadDisplayList()
     nGroups := DBG_GROUPS_CT
-    pGroupTitles := @pTitlesAr         ' pStr = long[pTitlesAr][grpIdx]
-    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars = long[pVarCtAr][grpIdx]
-    pGroupNames := @pNamesAr           ' pGrpNameAr = long[pNamesAr][grpIdx], pVarName = long[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
-    pGroupVars := @pValsAr             ' pGrpLongVar = long[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupTitles := @pTitlesAr         ' pStr = LONG[pTitlesAr][grpIdx]
+    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars = LONG[pVarCtAr][grpIdx]
+    pGroupNames := @pNamesAr           ' pGrpNameAr = LONG[pNamesAr][grpIdx], pVarName = LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupVars := @pValsAr             ' pGrpLongVar = LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
     {
     if showHDMIDebug
         debug("* -------------")

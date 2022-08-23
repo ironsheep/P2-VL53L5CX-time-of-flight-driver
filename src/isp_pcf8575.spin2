@@ -43,6 +43,8 @@ CON { Interface constants }
 ' devcie found (or not) responses
 #0, DVC_NOT_FOUND, DVC_ADDR0
 
+    READ_ERROR = $DEAD
+
 ' valid PCF8575 port bit directions
 #0, BIT_UNKNOWN, BIT_IS_INPUT, BIT_IS_OUTPUT
 
@@ -120,13 +122,6 @@ PUB deviceID() : eDevice
     '' Return indication (enum value) of if and which device we found on i2c bus
     eDevice := dvcI2CAddr
 
-PUB getIntPinState() : bPinState | rawPin
-    '' Return interpreted value of Interrupt pin where 1 = TRUE, 0 = FALSE
-    rawPin := pinr(pin_int)
-    bPinState := (rawPin == 0) ? false : true
-    'if bShowDebug
-        'debug(`8575log ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
-
 PUB stop()
     '' Stop our i2c bus use and float all pins
     ' no i2c_buss call needed, simply release all our pins
@@ -135,7 +130,7 @@ PUB stop()
         'if bShowDebug
         '    debug(`8575log '* Stopped' 10)
 
-CON  { ---- Device reads & writes ---- }
+CON  { ---- Synthesized Pin Direction Control ---- }
 
 PUB setBitDirection(bitNbr, eDirection) | valBitNbr
 '' Set output bit direction (eDirection, bits are 0-15)
@@ -173,30 +168,46 @@ PUB setOutputBitValue(bitNbr, bitValue) | valBitNbr
 
     writeWord(outBits)
 
-PUB getInputBitValue(bitNbr) : nBitValue | valBitNbr, nWordValue, readOK
+PUB getInputBitValue(bitNbr) : nBitValue | valBitNbr, nWordValue, bStatusOK
 '' Return [0,1] the value of the desired input bit (0-15)
     valBitNbr := validBitNumber(bitNbr)
-    nBitValue := 0  ' preset for error return
 
     if isOutputBit(valBitNbr)
         debug("*PCF: ERROR attempt to get value of bit that is NOT an input")
         abort
 
-    readOK, nWordValue := readWord()    ' get the value
-    if NOT readOK
-        nWordValue := 0 ' error kill all bits
+    bStatusOK, nWordValue := readWord()     ' get the value
+    if NOT bStatusOK
+        nBitValue := 0                      ' error kill all bits
         debug("*PCF: ERROR reading from device: getInputBitValue()")
         abort
 
     nBitValue := (nWordValue >> valBitNbr) & $01 ' isolate the desired bit
 
-PUB getInputBits() : nWordValue | readOK
-'' Return word that is all bits read from device with output bits zero'd
-    readOK, nWordValue := readWord()    ' get the value
-    'nWordValue &= !dirBits      ' mask off output bits
-    if NOT readOK
-        nWordValue := 0 ' error kill all bits
+PUB getInputBits() : nWordValue | bStatusOK
+'' Return word that is all bits read from device
+''  NOTE: Output bits are zero'd
+    bStatusOK, nWordValue := readWord()    ' get the value
+    debug("*PCF: DBG reading from device: ", uhex_long(nWordValue))
+    nWordValue &= !dirBits      ' mask off output bits
+    if NOT bStatusOK
+        nWordValue := READ_ERROR ' error kill all bits
         debug("*PCF: ERROR reading from device: getInputBits()")
+        abort
+
+PUB getInputBitsNTimes(pWordPointer, nWordCount) | bStatusOK, nWordIndex
+'' Read all 16 port pin values from device {nWordCount} times consecutively,
+''  all 16 port pin values, from device - placing them into WORD array located at {pWordPtr}
+'' NOTE: Each value has output bits zero'd
+    wordfill(pWordPointer, 0, nWordCount)                                    ' prefill w/zeros
+
+    bStatusOK := readWords(pWordPointer, nWordCount)    ' get the value
+    debug("*PCF: DBG reading from device: ", UHEX_WORD_ARRAY(pWordPointer, nWordCount))
+    repeat nWordIndex from 0 to nWordCount - 1
+        WORD[pWordPointer][nWordIndex] &= !dirBits      ' mask off output bits
+    if NOT bStatusOK
+        wordfill(pWordPointer, READ_ERROR, nWordCount)                                    ' prefill w/zeros
+        debug("*PCF: ERROR reading from device: getInputBitsNTimes()")
         abort
 
 PUB toggleOutputBit(bitNbr) | valBitNbr, newBitValue
@@ -215,75 +226,93 @@ PUB isOutputBit(bitNbr) : bIsOutput | valBitNbr
     valBitNbr := validBitNumber(bitNbr)
     bIsOutput := ((dirBits & (1 << valBitNbr)) <> 0) ? TRUE : FALSE
 
-PUB writeWord(dataValue16) : ok | ackbit
-'' Write {dataValue16} to our 16 port pins
-    i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
-    ackBit := i2c_bus.write(dataValue16.byte[0])
-    ok |= ackbit
-    ackBit := i2c_bus.write(dataValue16.byte[1])
-    ok |= ackbit
-    i2c_bus.stop()
+CON  { ---- Device reads & writes ---- }
 
+PUB getIntPinState() : bPinState | rawPin
+    '' Return interpreted value of Interrupt pin where 1 = TRUE, 0 = FALSE
+    rawPin := pinr(pin_int)
+    bPinState := (rawPin == 0) ? false : true
     'if bShowDebug
-    ' following is more than 10ms...
-    '    term.fstr3(string("*PCF: writeWord(0x%.02x)=0x%.04x ok:%d' 10), regAddr, dataValue16, ok)
+        'debug(`8575log ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
 
-PUB readWord() : ok, result16 | ackbit
+
+PUB readWord() : bStatusOK, result16 | ackbit
 '' Read {result16}, all 16 port pin values, from device
+''  returning both {bStatusOK} - T/F where TRUE = SUCCESS and
+''  {result16} - the WORD value read from the device
     i2c_bus.start()
     ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
-    ok |= ackbit
+    bStatusOK |= ackbit
     result16.byte[0] := i2c_bus.read(i2c_bus.ACK)
     result16.byte[1] := i2c_bus.read(i2c_bus.NAK)
 
     i2c_bus.stop()
     result16 := result16 signx 15   ' sign extend
     'if bShowDebug
-    '    term.fstr5(string("*PCF: readWord(0x%.02x) ok:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr, ok, result16.byte[1], result16.byte[0], result16)
-    debug(" -rdWd: ", udec(ok), uhex_word(result16))
+    '    term.fstr5(string("*PCF: readWord(0x%.02x) bStatusOK:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr, bStatusOK, result16.byte[1], result16.byte[0], result16)
+    debug(" -rdWd: ", udec(bStatusOK), uhex_word(result16))
+    bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
 
-PUB readWords(wordCount, pWordStore) : ok | ackbit, wordIndex, endAckNak, result16
-'' Read {wordCount} WORDs - placing them into WORD array located at {pWordStore}
+PUB writeWord(dataValue16) : bStatusOK | ackbit
+'' Write {dataValue16} to our 16 port pins
+''  returns {bStatusOK} - T/F where TRUE = SUCCESS
+    i2c_bus.start()
+    bStatusOK := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(dataValue16.byte[0])
+    bStatusOK |= ackbit
+    ackBit := i2c_bus.write(dataValue16.byte[1])
+    bStatusOK |= ackbit
+    i2c_bus.stop()
+
     'if bShowDebug
-    '    term.fstr2(string("*PCF: readWords(0x%.02x, ct=%d)' 10), regAddr, wordCount)
+    ' following is more than 10ms...
+    '    term.fstr3(string("*PCF: writeWord(0x%.02x)=0x%.04x bStatusOK:%d' 10), regAddr, dataValue16, bStatusOK)
+    bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
+
+PUB readWords(pWordPointer, nWordCount) : bStatusOK | ackbit, wordIndex, endAckNak, result16
+'' Read all 16 port pin values from device {nWordCount} times consecutively,
+''  all 16 port pin values, from device - placing them into WORD array located at {pWordPointer}
+''  returns {bStatusOK} - T/F where TRUE = SUCCESS
+    'if bShowDebug
+    '    term.fstr2(string("*PCF: readWords(0x%.02x, ct=%d)' 10), regAddr, nWordCount)
     i2c_bus.start()
     ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
-    ok |= ackbit
-    repeat wordIndex from 0 to wordCount - 1
-        endAckNak := (wordIndex == wordCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
+    bStatusOK |= ackbit
+    repeat wordIndex from 0 to nWordCount - 1
+        endAckNak := (wordIndex == nWordCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
         result16.byte[0] := i2c_bus.read(i2c_bus.ACK)
         result16.byte[1] := i2c_bus.read(endAckNak)
         result16 := result16 signx 15   ' sign extend
-        WORD [pWordStore][wordIndex] := result16
+        WORD [pWordPointer][wordIndex] := result16
         'if bShowDebug
-        '    term.fstr7(string(" -- readWords(0x%.02x) ok:%d, hi:0x%.02x, lo:0x%.02x, WORD[%d]ret 0x%.04x(%d)' 10), regAddr + (wordIndex * 2), ok, result16.byte[1], result16.byte[0], wordIndex, result16, result16)
+        '    term.fstr7(string(" -- readWords(0x%.02x) bStatusOK:%d, hi:0x%.02x, lo:0x%.02x, WORD[%d]ret 0x%.04x(%d)' 10), regAddr + (wordIndex * 2), bStatusOK, result16.byte[1], result16.byte[0], wordIndex, result16, result16)
     i2c_bus.stop()
     'if bShowDebug
-    '    term.fstr3(string(" -- readWords(0x%.02x, ct=%d) ok:%d' 10), regAddr, wordCount, ok)
-    debug("readWords: ", udec_long(wordCount))
-    repeat wordIndex from 0 to wordCount - 1
-        debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordStore][wordIndex]))
+    '    term.fstr3(string(" -- readWords(ct=%d) bStatusOK:%d' 10), nWordCount, bStatusOK)
+    debug("readWords: ", udec_long(nWordCount))
+    repeat wordIndex from 0 to nWordCount - 1
+        debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordPointer][wordIndex]))
+    bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
 
 CON { --- PRIVATE (Utility) Methods --- }
 
 DAT { driver internal data }
 
-    dirBits     LONG    0   ' all are inputs (0-in, 1-out)
-    outBits     LONG    0   ' last written output bit values
+    dirBits     WORD    0           ' all are inputs (0-in, 1-out)
+    outBits     WORD    $FFFF       ' last written output bit values (1 bit means bit is input)
 
     ' dirBits value of 1 allows write to outBits
     '  outbits is written to port at each output write
 
 
-PRI setupPins(pinSCL, pinSDA, pinINT) : ok | maskedBasepin
+PRI setupPins(pinSCL, pinSDA, pinINT) : bStatusOK | maskedBasepin
     ' Configure pin numbers if not already
     '   return T/F where T means SUCCESS and F means FAILED - bad basepin value
     pin_scl := pinSCL
     pin_sda := pinSDA
     pin_int := pinINT
     floatDvcPins()
-    ok := TRUE
+    bStatusOK := TRUE
 
 PRI floatDvcPins()
     ' pre-condition the click I/O pins
