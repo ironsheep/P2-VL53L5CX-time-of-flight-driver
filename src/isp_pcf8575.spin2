@@ -330,6 +330,7 @@ PRI idDevice() : eDevice | bFoundAddr0, nAddrFound
         'debug("*PCF: idDevice() found ", uhex(PCF8575_I2C_ADDR_0))
     'else
         'debug("*PCF: idDevice() NOTHING present()")
+    i2c_bus.stop()
 
     dvcI2CAddr := DVC_NOT_FOUND
     eDevice := DVC_NOT_FOUND

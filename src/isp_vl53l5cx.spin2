@@ -1,0 +1,440 @@
+'' =================================================================================================
+''
+''   File....... isp_vl53l5cx.spin2
+''   Purpose.... Interface to VL53L5CX sensor via I2C
+''   Authors.... Stephen M Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Aug 2022
+''   Updated.... 20 Aug 2022
+''
+'' =================================================================================================
+
+ {{
+
+    Satel Breakout Board IO Assignments
+
+            ┌──────────────────┐
+        <-- │ [ ] INT          │
+            │                  │
+        --> │ (*) I2C_RST      │
+            │                  │
+        <-> │ (*) SDA          │
+            │                  │
+        --> │ (*) SCL          │
+            │                  │
+        --> │ (*) LPn          │
+            │                  │
+        --> │ (*) PWREN        │
+            │                  │
+            │ (*) A VDD - 3v3  │
+            │                  │
+            │ (*) IO VDD - 3v3 │
+            │                  │
+            │ [*] GND          │
+            ┌──────────────────┐
+            │                  │
+            │      Sensor      │
+            │                  │
+            └──────────────────/
+
+    REF Board: https://www.mikroe.com/mpu-9dof-click
+    REF MPU9250A Datasheet: https://download.mikroe.com/documents/datasheets/PS-MPU-9250A-01-v1.1.pdf
+    REF User Manual: https://download.mikroe.com/documents/add-on-boards/click/mpu-9dof/mpu-9dof-click-manual-v100.pdf
+    REF Register Manual: https://inertialelements.com/documents/resources_page/MPU-register-manual.pdf
+
+}}
+
+CON { Interface constants }
+
+' devcie found (or not) responses
+#0, DVC_NOT_FOUND, DVC_ADDR0, DVC_ADDR1
+
+    VL53L5CX_STATUS_OK  = 0
+    VL53L5CX_STATUS_ERROR = (-1)
+
+con { fixed io pins }
+
+  RX1      = 63  { I }                                          ' programming / debug
+  TX1      = 62  { O }
+
+  SF_CS    = 61  { O }                                          ' serial flash
+  SF_SCK   = 60  { O }
+  SF_SDO   = 59  { O }
+  SF_SDI   = 58  { I }
+
+OBJ
+
+    i2c_bus     : "jm_i2c"                                  ' i2c coms
+
+DAT { pre-initialized }
+
+    bShowDebug  BYTE    FALSE
+
+VAR { globals }
+
+    LONG    pin_scl
+    LONG    pin_sda
+    LONG    pin_int
+    LONG    pin_rst
+    LONG    pin_lpn
+    LONG    pin_pwren
+
+    LONG    bDidCalibrate
+    LONG    bPinsSetUp
+    LONG    bDeviceFound
+    LONG    dvcI2CAddr
+
+CON { driver Settings }
+
+    PULL_UP_VL53L5CX_I2C = i2c_bus.PU_NONE
+    FREQ_IN_KHZ_VL53L5CX_I2C = 100              ' use 400 KHz
+
+    MODE_READ               = %0000_0001
+    MODE_WRITE              = %0000_0000
+
+    VL53L5CX_I2C_ADDR_0      = $52 >> 1
+    VL53L5CX_I2C_ADDR_1      = $54 >> 1
+
+PUB enableDebug(bEnable)
+    '' turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object)
+    bShowDebug := bEnable
+    if bShowDebug
+        'debug(`snsLog 10 '* DBG ON' 10)
+    else
+        'debug(`snsLog 10 '* DBG off' 10)
+
+PUB init(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)
+    '' Initialize the output pins (quiet the device so we can trigger LA)
+    'debug(`term snsLog pos 500 30 size 50 14 textsize 12 color green)
+
+    bDidCalibrate := FALSE ' initially we say the device is NOT calibrated
+
+    bPinsSetUp := setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)  ' configure pin numbers if not already
+    if bPinsSetUp
+        floatPins()
+        ' have the driver force its own pins quiet
+        i2c_bus.quiesce(pin_scl, pin_sda, PULL_UP_VL53L5CX_I2C)
+
+PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent
+    '' Start the device running
+    bDidCalibrate := FALSE ' initially we say the device is NOT calibrated
+
+    bPinsSetUp := setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)  ' configure pin numbers if not already
+    if bPinsSetUp
+        i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
+        bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
+        if bShowDebug
+            'debug(`snsLog '* Started' 10)
+        if bDeviceFound
+            is_alive()
+
+PUB configDefault()
+    '' Configure the device for normal use
+    if bDeviceFound
+        'enableDebug(TRUE) ' set this to FALSE to disable object debug output on serial port, override with enableDebug(T/F)
+        'configureDevice()
+        'enableDebug(FALSE) ' set this to FALSE to disable object debug output on serial port, override with enableDebug(T/F)
+
+PUB deviceID() : eDevice
+    '' return indication (enum value) of if and which device we found on i2c bus
+    eDevice := dvcI2CAddr
+
+PUB stop()
+    '' Stop our i2c bus use and float all pins
+    ' no i2c_buss call needed, simply release all our pins
+    if bPinsSetUp
+        floatPins()
+        if bShowDebug
+            'debug(`snsLog '* Stopped' 10)
+
+PRI setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : ok
+    ' Configure pin numbers if not already
+    '   return T/F where T means SUCCESS and F means FAILED - bad basepin value
+    ok := true
+
+    pin_scl := pinSCL
+    pin_sda := pinSDA
+    pin_int := pinINT
+
+    ' I2C_RST: I2C interface reset pin, active high. Toggle this pin from 0 to 1, then back to 0 to reset the I2C
+    pin_rst := pinRST
+
+    ' LPn: Comms enable. Drive this pin to logic 0 to disable the I2C comms when the device is in
+    '  LP mode. Drive this pin to logic 1 to enable I2C comms in LP mode. Typically used when
+    '  it is required to change the I2C adress in multidevice systems.
+    pin_lpn := pinLPN
+      '
+    pin_pwren := pinPWREN
+
+    ' float our inputs
+    floatPins()
+
+    ' enable 5v to 3.3v power supply
+    pinh(pin_pwren)             ' assert pwr enable
+
+    ' condition the chip drive
+    pinh(pin_lpn)               ' assert LPn (enable device selection)
+
+    resetI2C()
+
+PRI resetI2C()
+' reset the I2C interface controller of the vl53l5cx
+    pinl(pin_rst)               ' De-assert reset
+    waitus(10)
+    pinh(pin_rst)               ' Assert reset  (reset the I2C I/F)
+    waitus(10)
+    pinl(pin_rst)               ' De-assert reset
+    waitus(10)
+
+PRI resetSensor()
+' reset vl53l5cx sensor
+    pinl(pin_lpn)               ' De-assert device enable
+    waitus(10)
+    pinh(pin_lpn)               ' Assert device enable
+    waitus(10)
+
+PRI floatPins()
+    ' pre-condition the click I/O pins
+    pinf(pin_rst)    ' de-assert
+    pinf(pin_int)    ' de-assert
+    pinf(pin_scl)    ' de-assert
+    pinf(pin_sda)    ' de-assert
+    pinf(pin_lpn)    ' de-assert
+    pinf(pin_pwren)  ' de-assert
+
+PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
+    ' Identify the address our device is at on the i2c bus
+    floatPins()
+        ' enable 5v to 3.3v power supply
+    pinh(pin_pwren)             ' assert pwr enable
+    waitus(2)
+
+    ' condition the chip drive
+    pinh(pin_lpn)               ' assert LPn (enable device selection)
+
+    bFoundAddr0 := bFoundAddr1 := false
+    if(i2c_bus.present((VL53L5CX_I2C_ADDR_1 << 1 | MODE_WRITE)))
+        bFoundAddr1 := true
+    else
+        if(i2c_bus.present((VL53L5CX_I2C_ADDR_0 << 1 | MODE_WRITE)))
+            bFoundAddr0 := true
+    i2c_bus.stop()
+
+    dvcI2CAddr := DVC_NOT_FOUND
+    eDevice := DVC_NOT_FOUND
+    if(!bFoundAddr0 and bFoundAddr1)
+        eDevice := DVC_ADDR1
+        dvcI2CAddr := VL53L5CX_I2C_ADDR_1
+    elseif(bFoundAddr0 and !bFoundAddr1)
+        eDevice := DVC_ADDR0
+        dvcI2CAddr := VL53L5CX_I2C_ADDR_0
+{
+    if (bFoundAddr0 or bFoundAddr1)
+        if bShowDebug
+            debug(`snsLog ' * idDevice() found Addr`(dvcI2CAddr - 1)' 10)
+    else
+        if bShowDebug
+            debug("* idDevice() NOT found")
+'}
+
+CON { Device Registers - best we can tell }
+
+    VL53L5CX_REG_CONTROL = $7fff
+    VL53L5CX_CTL_VAL_CONFIG = $00
+    VL53L5CX_CTL_VAL_RUN    = $02
+
+    VL53L5CX_REG_DVC_ID = $0000
+    VL53L5CX_REG_REV_ID = $0001
+
+    VL53L5CX_REG_DVC_ADDR = $0004
+
+
+
+PUB set_i2c_address(i2cAddress) : status
+
+    status := VL53L5CX_STATUS_OK
+
+    status := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_CONFIG)          ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    status := writeByte(VL53L5CX_REG_DVC_ADDR, i2cAddress >> 1)                 ' |= WrByte(&(p_dev->platform), 0x4, (uint8_t)(i2c_address >> 1))
+                                                                                ' p_dev->platform.address = i2c_address
+    status := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_RUN)             ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    dvcI2CAddr := i2cAddress
+
+PUB is_alive() : status, bIsAlive | device_id, revision_id, ok
+
+  status := VL53L5CX_STATUS_OK
+
+  ok := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_CONFIG)                ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+  ok, device_id := readByte(VL53L5CX_REG_DVC_ID)                                ' status |= RdByte(&(p_dev->platform), 0, &device_id)
+  ok, revision_id := readByte(VL53L5CX_REG_REV_ID)                              ' status |= RdByte(&(p_dev->platform), 1, &revision_id)
+  ok := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_RUN)                   ' status := writeByte($7fff, $02)             ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+
+  if ((device_id == $F0) and (revision_id == $02))
+    bIsAlive := TRUE
+    debug("TOF: is alive!")
+  else
+    bIsAlive := FALSE
+
+
+
+PUB getIntPinState() : bPinState | rawPin
+    '' Return interpreted value of Interrupt pin where 1 = TRUE, 0 = FALSE
+    rawPin := pinr(pin_int)
+    bPinState := (rawPin == 0) ? false : true
+    'if bShowDebug
+        'debug(`snsLog ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
+
+CON  { ---- Device reads & writes ---- }
+
+PUB writeByte(regAddr16, dataValue8) : ok | ackbit
+    '' Write {dataValue8} to register {regAddr16}
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    ackBit := i2c_bus.write(dataValue8)
+    ok |= ackbit
+    i2c_bus.stop()
+    waitms(2)  ' after each write!
+
+    'if bShowDebug
+    ' following is more than 10ms...
+    '    term.fstr3(string("* writeByte(0x%.02x)=0x%.02x ok:%d' 10), regAddr16, dataValue8, ok)
+
+PUB readByte(regAddr16) : ok, result8 | ackbit
+    '' Read {result16} from register {regAddr16}
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    i2c_bus.start()
+    ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
+    ok |= ackbit
+    result8 := i2c_bus.read(i2c_bus.NAK)
+    i2c_bus.stop()
+    'if bShowDebug
+    '    'debug(`snsLog ' * readByte(0x%.02x) ok:%d, byt=0x%.02x, ret %d' 10), regAddr16, ok, result8, result8)
+    debug(" -rdBy: ", udec(ok), uhex_byte(regAddr16), uhex_byte(result8))
+
+PUB writeWord(regAddr16, dataValue16) : ok | ackbit
+    '' Write {dataValue16} to register {regAddr16} - hi byte to {regAddr16}, lo byte to {regAddr16}+1
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    ackBit := i2c_bus.write(dataValue16.byte[1])
+    ok |= ackbit
+    ackBit := i2c_bus.write(dataValue16.byte[0])
+    ok |= ackbit
+    i2c_bus.stop()
+    waitms(2)  ' after each write!
+
+    'if bShowDebug
+    ' following is more than 10ms...
+    '    term.fstr3(string("* writeWord(0x%.02x)=0x%.04x ok:%d' 10), regAddr16, dataValue16, ok)
+
+PUB readWord(regAddr16) : ok, result16 | ackbit
+    '' Read {result16} from register {regAddr16} - hi byte from {regAddr16}, lo byte from {regAddr16}+1
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    i2c_bus.start()
+    ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
+    ok |= ackbit
+    result16.byte[1] := i2c_bus.read(i2c_bus.ACK)
+    result16.byte[0] := i2c_bus.read(i2c_bus.NAK)
+    i2c_bus.stop()
+    result16 := result16 signx 15   ' sign extend
+    'if bShowDebug
+    '    term.fstr5(string("* readWord(0x%.02x) ok:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr16, ok, result16.byte[1], result16.byte[0], result16)
+    debug(" -rdWd: ", udec(ok), uhex_byte(regAddr16), uhex_word(result16))
+
+PUB readBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAckNak, result8
+    '' Read {result16} from register {regAddr16}
+    'if bShowDebug
+    '    term.fstr2(string("* readBytes(0x%.02x, ct=%d)' 10), regAddr16, byteCount)
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    i2c_bus.start()
+    ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
+    ok |= ackbit
+    repeat byteIndex from 0 to byteCount - 1
+        endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
+        result8 := i2c_bus.read(endAckNak)
+        result8 := result8 signx 7
+        BYTE [pByteStore][byteIndex] := result8
+        'if bShowDebug
+        '    term.fstr5(string(" -- readBytes(0x%.02x) ok:%d, BYTE[%d]ret 0x%.02x(%d)' 10), regAddr16 + byteIndex, ok, byteIndex, result8, result8)
+    i2c_bus.stop()
+    'if bShowDebug
+    '    term.fstr3(string(" -- readBytes(0x%.02x, ct=%d) ok:%d' 10), regAddr16, byteCount, ok)
+
+PUB readWords(regAddr16, wordCount, pWordStore) : ok | ackbit, wordIndex, endAckNak, result16
+    '' Read {wordCount} WORDs starting from register {regAddr16} - hi byte from {regAddr16},
+    ''  lo byte from {regAddr16}+1, hi byte from {regAddr16}+2, lo byte from {regAddr16}+3 and so on
+    ''  placing them into WORD array located at {pWordStore}
+    'if bShowDebug
+    '    term.fstr2(string("* readWords(0x%.02x, ct=%d)' 10), regAddr16, wordCount)
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16)
+    ok |= ackbit
+    i2c_bus.start()
+    ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
+    ok |= ackbit
+    repeat wordIndex from 0 to wordCount - 1
+        endAckNak := (wordIndex == wordCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
+        result16.byte[1] := i2c_bus.read(i2c_bus.ACK)
+        result16.byte[0] := i2c_bus.read(endAckNak)
+        result16 := result16 signx 15   ' sign extend
+        WORD [pWordStore][wordIndex] := result16
+        'if bShowDebug
+        '    term.fstr7(string(" -- readWords(0x%.02x) ok:%d, hi:0x%.02x, lo:0x%.02x, WORD[%d]ret 0x%.04x(%d)' 10), regAddr16 + (wordIndex * 2), ok, result16.byte[1], result16.byte[0], wordIndex, result16, result16)
+    i2c_bus.stop()
+    'if bShowDebug
+    '    term.fstr3(string(" -- readWords(0x%.02x, ct=%d) ok:%d' 10), regAddr16, wordCount, ok)
+    debug("readWords: ", uhex_byte(regAddr16), udec_long(wordCount))
+    repeat wordIndex from 0 to wordCount - 1
+        debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordStore][wordIndex]))
+
+
+CON { --- license --- }
+
+{{
+
+ -------------------------------------------------------------------------------------------------
+  Terms of Use: MIT License
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this
+  software and associated documentation files (the "Software"), to deal in the Software
+  without restriction, including without limitation the rights to use, copy, modify,
+  merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+  permit persons to whom the Software is furnished to do so, subject to the following
+  conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies
+  or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+  INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+  PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+  OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ =================================================================================================
+}}

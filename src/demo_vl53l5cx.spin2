@@ -1,0 +1,550 @@
+'' =================================================================================================
+''
+''   File....... demo_vl53l5cx.spin2
+''   Purpose.... Utility to demonstrate interaction with our VL53L5CX time-of-flight sensor
+''   Authors.... Stephen M Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Aug 2022
+''   Updated.... 20 Aug 2022
+''
+'' =================================================================================================
+
+CON { timing }
+
+  CLK_FREQ = 270_000_000                                        ' system freq as a constant
+  _clkfreq = CLK_FREQ                                           ' set system clock
+  MS_001   = CLK_FREQ / 1_000                                   ' ticks in 1ms
+  US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
+
+  BR_TERM  = 230_400                                            ' terminal baud rate
+
+
+CON { fixed io pins }
+
+  RX1      = 63  { I }                                          ' programming / debug
+  TX1      = 62  { O }
+
+  SF_CS    = 61  { O }                                          ' serial flash
+  SF_SCK   = 60  { O }
+  SF_SDO   = 59  { O }
+  SF_SDI   = 58  { I }
+
+  SD_SCK   = 61  { O }                                          ' sd card
+  SD_CS    = 60  { O }
+  SD_SDI   = 59  { O }
+  SD_SDO   = 58  { I }
+
+  SDA1     = 57  { IO }                                         ' i2c (optional)
+  SCL1     = 56  { IO }
+
+CON { app io pins }
+
+    PIN_HDMI_BASE = 8
+
+    PIN_TOF_INT     = 16
+    PIN_TOF_RST     = 17
+    PIN_TOF_SDA     = 18
+    PIN_TOF_SCL     = 19
+    PIN_TOF_LPN     = 20
+    PIN_TOF_PWREN   = 21
+
+
+CON { basic constants }
+
+    #true, ON, OFF                                                ' digital control
+    #0, NO, YES
+
+    TRIES = 1                                                     ' should not be needed!
+
+    #0, S_LIST, S_MATRIX                                          ' display styles
+
+    STYLE = S_MATRIX                                              ' selected style
+
+
+OBJ { our sensors }
+
+    tofSensor   : "isp_vl53l5cx"                      ' our device under test
+    tvDebug     : "isp_hdmi_debug"                          ' Our HDMI display
+
+VAR
+    long    cog
+
+DAT { run-time condition vars }
+
+    bUseHDMI        long    TRUE        ' set to TRUE to enable HDMI use/output
+    showHDMIDebug   long    FALSE
+
+    senseStack      long    0[64]
+
+    senseCog        long    0
+
+    screenTitle    byte    "-- Click mpu9dof object Debug --", 0
+
+CON { -------------- MAIN -------------- }
+
+PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, basePin
+    '' Main entry point of MPU 9DOF demo
+    debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
+
+    if bUseHDMI
+        tvDebug.start(PIN_HDMI_BASE, @screenTitle)
+
+        nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars := getDebugData()
+        debug("* Received: ", udec(nGroups), uhex_long(pGroupTitles), uhex_long(pGroupNames), uhex_long(pGroupVarCts), uhex_long(pGroupVars))
+        tvDebug.registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars)
+    else
+        showHDMIDebug := FALSE  ' force this off is not using HDMI
+{
+    senseCog := cogspin(NEWCOG, taskReadSensor(), @senseStack) + 1
+    if senseCog == 0    ' did fail?
+        debug("!! ERROR filed to start 9DOF Sense task")
+'}
+    initSensor()
+
+    repeat  ' halt here for now
+
+
+CON { ------ PRIVATE (Utility) Methods ------ }
+
+
+PRI initSensor() : ok | deviceFound
+    ' find and configure our mpu9dof device
+    debug(`demoLog 'Setup...' 10)
+    deviceFound := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
+
+    debug(`demoLog 'ID device address...' 10)
+    deviceFound := tofSensor.deviceID()
+    ok := true
+    if(deviceFound <> tofSensor.DVC_NOT_FOUND)
+        debug(`demoLog 'Found Addr-`(deviceFound - 1)' 10)
+    else
+        debug(`demoLog 'ERROR: Found no devices' 10)
+        ok := false
+
+DAT { misc messages }
+
+minusMsg    BYTE    "-",0
+plusMsg    BYTE    0
+
+PRI unscale(value, scale) : intPart, decimalPart, pSign
+    intPart := value / scale
+    decimalPart := value // scale
+    pSign := (value < 0) ? @minusMsg : @plusMsg
+    if decimalPart < 0
+        decimalPart := 0 - decimalPart
+    'term.fstr5(string("* Value %d scale(%d) -> %s%d.%d"), value, scale, pSign, intPart, decimalPart)
+    'debug("* Value ", udec_(value), " scale(", udec_(scale), ") -> ", zstr_(pSign), udec(intPart), ".", udec(decimalPart))
+    debug(`demoLog '* Value `(value) scale[`(scale)] -> ', zstr_(pSign), '`(intPart).`(decimalPart)')
+
+
+PRI tearDown()
+    ' stop anything that needs to be...
+    tofSensor.stop()    ' pull ourself off the i2c bus
+
+CON { --- TASK: keep live mpu9dof data --- }
+
+VAR { captured sensor data }
+
+    long rawMagX
+    long rawMagY
+    long rawMagZ
+    long magX
+    long magY
+    long magZ
+
+    long rawAccelX
+    long rawAccelY
+    long rawAccelZ
+    long accelX
+    long accelY
+    long accelZ
+
+    long rawGyroX
+    long rawGyroY
+    long rawGyroZ
+    long gyroX
+    long gyroY
+    long gyroZ
+
+    long roll
+    long pitch
+    long yaw
+    long unused0
+    long unused1
+    long senseTimeMS
+
+    long ticks1ms
+    long ticks1us
+    long ticks125ms
+
+PRI taskReadSensor() | startTicks, startMS, statusOK
+    ' start for this cog too
+{
+    debug("Quiesce...")
+
+    ticks1ms   := (CLKFREQ / 1_000)
+    ticks1us   := (CLKFREQ / 1_000_000)
+    ticks125ms := ticks1ms * 125 * 2
+
+    'tofSensor.enableDebug(TRUE)
+    tofSensor.init(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' set pins to output low... so we can set LA trigger
+
+    debug("* taskReadSensor()  started")
+    statusOK := initSensor()    ' start our i2c MPU 9DOF sensor
+    if statusOK
+        debug("calibration()")
+        calibrateSensor()
+        debug("calibration() Complete")
+
+        debug("demo()")
+        resetSensor(statusOK)
+
+        repeat
+            startTicks := getct()
+            startMS := getms()
+
+            rawAccelX, rawAccelY, rawAccelZ := tofSensor.readAccelRaw()
+            accelX, accelY, accelZ := tofSensor.readAccel()
+
+            rawGyroX, rawGyroY, rawGyroZ := tofSensor.readGyroRaw()
+            gyroX, gyroY, gyroZ := tofSensor.readGyro()
+
+            rawMagX, rawMagY, rawMagZ := tofSensor.readMagRaw()
+            magX, magY, magZ := tofSensor.readMag()
+
+            roll, pitch, yaw := tofSensor.getRollPitchYaw()
+
+            senseTimeMS := getms() - startMS
+
+            '   wait remainder of 125 mSec before next sample pass
+            waitms(33)
+            'waitct(startTicks + ticks125ms)    ' wait to create "sense" time-base
+    else
+        debug("no sensor, TASK aborted")
+
+    tearDown()  ' stop any cogs, if needed
+    debug("Done")
+'}
+
+DAT { cal data }
+
+accelBiasXYZ long    0[3]
+gyroBiasXYZ long    0[3]
+
+PRI calibrateSensor()
+    ' put sensor thru calibration paces
+    'tofSensor.enableDebug(TRUE)
+
+    'tofSensor.calibrateMPU9150(@gyroBiasXYZ, @accelBiasXYZ)
+    {
+    debug("- Calibration Offsets  - - - - - - - - - - - - - - - -")
+    debug(`demoLog ' Accel X : `(LONG [@accelBiasXYZ][0])   |   Gyro X : `(LONG [@gyroBiasXYZ][0])' 10)
+    debug(`demoLog ' Accel Y : `(LONG [@accelBiasXYZ][1])   |   Gyro Y : `(LONG [@gyroBiasXYZ][1])' 10)
+    debug(`demoLog ' Accel Z : `(LONG [@accelBiasXYZ][2])   |   Gyro Z : `(LONG [@gyroBiasXYZ][2])' 10)
+    debug("- - - - - - - - - - - - - - - - - - - - - -- - - - - -")
+    '}
+
+    'tofSensor.enableDebug(FALSE)
+
+PRI resetSensor(ok)
+    if(ok)
+        'tofSensor.configDefault()
+        waitms(10)  ' guard
+
+
+CON { -------------- demo-0 -------------- }
+
+PUB demo0(loopCt) | accel_x, accel_y, accel_z, temperatureInC, decimalInC, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, temperatureInF, decimalInF
+    '' Actual MPU 9DOF demo - read regs and display values
+{
+    if loopCt <= 0
+        loopCt := 1
+
+    ' loop 1 - N times
+    repeat loopCt
+        accel_x, accel_y, accel_z := tofSensor.readAccel()
+        waitms(10)
+        gyro_x, gyro_y, gyro_z := tofSensor.readGyro()
+        waitms(10)
+        mag_x, mag_y, mag_z := tofSensor.readMag()
+        waitms(10)
+        temperatureInC, decimalInC := tofSensor.readTemperature()
+        temperatureInF, decimalInF := tofSensor.comvert2TempInF(temperatureInC, decimalInC)
+
+
+        tmpIntX, tmpDecimalX, pSignX := unscale(accel_x, 1000)
+        tmpIntY, tmpDecimalY, pSignY := unscale(accel_x, 1000)
+        tmpIntZ, tmpDecimalZ, pSignZ := unscale(accel_x, 1000)
+
+        debug(`demoLog ' Accel X : `(tmpIntX).`(tmpDecimalX) | Gyro X : `(gyro_x) | Mag X : `(mag_x)' 10)
+        debug(`demoLog ' Accel Y : `(tmpIntY).`(tmpDecimalY) | Gyro Y : `(gyro_y) | Mag Y : `(mag_y)' 10)
+        debug(`demoLog ' Accel Z : `(tmpIntZ).`(tmpDecimalZ) | Gyro Z : `(gyro_z) | Mag Z : `(mag_z)' 10)
+        debug("\r\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
+        debug(`demoLog 'Temperature: `(temperatureInC).`(decimalInC) C' 10)
+        debug(`demoLog 'Temperature: `(temperatureInF).`(decimalInF) F')
+        debug("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\r\n")
+
+        waitms(3000)
+'}
+
+
+CON { -------------- demo-1 -------------- }
+
+DAT { demo1 data: sample names }
+
+{
+
+sample0 byte    "top",0
+sample1 byte    "toLeft",0
+sample2 byte    "toRight",0
+sample3 byte    "toFront",0
+sample4 byte    "toBack",0
+sample5 byte    "bottom",0
+
+' float conversion crap
+tmpIntX     long    0
+tmpDecimalX long    0
+pSignX      long    0
+tmpIntY     long    0
+tmpDecimalY long    0
+pSignY      long    0
+tmpIntZ     long    0
+tmpDecimalZ long    0
+pSignZ      long    0
+
+sampleNames LONG    @sample0, @sample1, @sample2, @sample3, @sample4, @sample5
+'}
+
+PUB demo1(loopCt) | pName, loopIndex, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z
+{
+    if loopCt <= 0
+        loopCt := 1
+
+    ' loop 1 - N times
+    pName := LONG [@sampleNames][0]
+    debug(`demoLog '-->  Set Up:  `(0+1)')
+    waitms(3000)
+    repeat loopIndex from 0 to loopCt - 1
+        pName := LONG [@sampleNames][loopIndex]
+        accel_x, accel_y, accel_z := tofSensor.readAccelRaw()
+        gyro_x, gyro_y, gyro_z := tofSensor.readGyroRaw()
+        mag_x, mag_y, mag_z := tofSensor.readMagRaw()
+        tmpIntX, tmpDecimalX, pSignX := unscale(accel_x, 1000)
+        tmpIntY, tmpDecimalY, pSignY := unscale(accel_y, 1000)
+        tmpIntZ, tmpDecimalZ, pSignZ := unscale(accel_z, 1000)
+
+        debug(`demoLog 10 '- `(loopIndex+1)  - - - - - - - - - - -')
+        debug(`demoLog ' Accel X : `(tmpIntX).`(tmpDecimalX)   |   Gyro X : `(gyro_x)   |   Mag X : `(mag_x)')
+        debug(`demoLog ' Accel Y : `(tmpIntY).`(tmpDecimalY)    |   Gyro Y : `(gyro_y)   |   Mag Y : `(mag_y)')
+        debug(`demoLog ' Accel Z : `(tmpIntZ).`(tmpDecimalZ)    |   Gyro Z : `(gyro_z)   |   Mag Z : `(mag_z)')
+        debug(`demoLog '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -' 10)
+
+        pName := LONG [@sampleNames][loopIndex+1]
+        debug(`demoLog 10 '-->  Set Up:  `(loopIndex+2)' 10)
+        waitms(3000)
+'}
+
+CON { --- HDMI Debug Support --- }
+
+CON { Constants for HDMI Debug }
+
+    DBG_GROUPS_CT = 4
+    DBG_MAX_VARS_IN_GROUP = 7
+
+VAR { * Data Structure for HDMI Debug * }
+
+    LONG    pTitlesAr[DBG_GROUPS_CT + 1]    ' first value is max vars
+    LONG    pVarCtAr[DBG_GROUPS_CT]
+    LONG    pNamesAr[DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP]
+    LONG    pValsAr[DBG_GROUPS_CT*DBG_MAX_VARS_IN_GROUP]
+
+DAT { Literals for HDMI Debug }
+
+' acelerometer data
+    nameTitle1  BYTE    "Accel",0
+    name10      BYTE    "rawX",0
+    name11      BYTE    "rawY",0
+    name12      BYTE    "rawZ",0
+    name13      BYTE    "X",0
+    name14      BYTE    "Y",0
+    name15      BYTE    "Z",0
+nextAddr1
+    dataLen1     LONG    @nextAddr1 - @nameTitle1
+
+' magnetometer data
+    nameTitle2  BYTE    "Mag",0
+    name20      BYTE    "rawX",0
+    name21      BYTE    "rawY",0
+    name22      BYTE    "rawZ",0
+    name23      BYTE    "X",0
+    name24      BYTE    "Y",0
+    name25      BYTE    "Z",0
+nextAddr2
+    dataLen2     LONG    @nextAddr2 - @nameTitle2
+
+' gyroscope data
+    nameTitle3  BYTE    "Gyro",0
+    name30      BYTE    "rawX",0
+    name31      BYTE    "rawY",0
+    name32      BYTE    "rawZ",0
+    name33      BYTE    "X",0
+    name34      BYTE    "Y",0
+    name35      BYTE    "Z",0
+nextAddr3
+    dataLen3     LONG    @nextAddr3 - @nameTitle3
+
+' orientation data & misc data
+    nameTitle4  BYTE    "Orientation+",0
+    name40      BYTE    "roll",0
+    name41      BYTE    "pitch",0
+    name42      BYTE    "yaw",0
+    name43      BYTE    " -",0
+    name44      BYTE    " -",0
+    name45      BYTE    "sens-ms",0
+nextAddr4
+    dataLen4     LONG    @nextAddr4 - @nameTitle4
+
+PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
+' do internal one-time setup of driver debug data
+    nGrpOffset := 0
+    nVarsInGroup := 6
+    LONG[@pTitlesAr][nGrpOffset] := @nameTitle1
+    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
+    ' populate the empty name/value ptr tables
+    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP
+    LONG[@pNamesAr][nValsGrpOffset + 0] := @name10
+    LONG[@pNamesAr][nValsGrpOffset + 1] := @name11
+    LONG[@pNamesAr][nValsGrpOffset + 2] := @name12
+    LONG[@pNamesAr][nValsGrpOffset + 3] := @name13
+    LONG[@pNamesAr][nValsGrpOffset + 4] := @name14
+    LONG[@pNamesAr][nValsGrpOffset + 5] := @name15
+    LONG[@pValsAr][nValsGrpOffset + 0] := @rawAccelX
+    LONG[@pValsAr][nValsGrpOffset + 1] := @rawAccelY
+    LONG[@pValsAr][nValsGrpOffset + 2] := @rawAccelZ
+    LONG[@pValsAr][nValsGrpOffset + 3] := @accelX
+    LONG[@pValsAr][nValsGrpOffset + 4] := @accelY
+    LONG[@pValsAr][nValsGrpOffset + 5] := @accelZ
+
+    ' reset unused
+    unused0 := 0
+    unused1 := 0
+
+    nGrpOffset := 1
+    nVarsInGroup := 6
+    LONG[@pTitlesAr][nGrpOffset] := @nameTitle2
+    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
+     ' populate the empty name/value ptr tables
+    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
+    LONG[@pNamesAr][nValsGrpOffset + 0] := @name20
+    LONG[@pNamesAr][nValsGrpOffset + 1] := @name21
+    LONG[@pNamesAr][nValsGrpOffset + 2] := @name22
+    LONG[@pNamesAr][nValsGrpOffset + 3] := @name23
+    LONG[@pNamesAr][nValsGrpOffset + 4] := @name24
+    LONG[@pNamesAr][nValsGrpOffset + 5] := @name25
+    LONG[@pValsAr][nValsGrpOffset + 0] := @rawMagX
+    LONG[@pValsAr][nValsGrpOffset + 1] := @rawMagY
+    LONG[@pValsAr][nValsGrpOffset + 2] := @rawMagZ
+    LONG[@pValsAr][nValsGrpOffset + 3] := @magX
+    LONG[@pValsAr][nValsGrpOffset + 4] := @magY
+    LONG[@pValsAr][nValsGrpOffset + 5] := @magZ
+
+    nGrpOffset := 2
+    nVarsInGroup := 6
+    LONG[@pTitlesAr][nGrpOffset] := @nameTitle3
+    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
+     ' populate the empty name/value ptr tables
+    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
+    LONG[@pNamesAr][nValsGrpOffset + 0] := @name30
+    LONG[@pNamesAr][nValsGrpOffset + 1] := @name31
+    LONG[@pNamesAr][nValsGrpOffset + 2] := @name32
+    LONG[@pNamesAr][nValsGrpOffset + 3] := @name33
+    LONG[@pNamesAr][nValsGrpOffset + 4] := @name34
+    LONG[@pNamesAr][nValsGrpOffset + 5] := @name35
+    LONG[@pValsAr][nValsGrpOffset + 0] := @rawGyroX
+    LONG[@pValsAr][nValsGrpOffset + 1] := @rawGyroY
+    LONG[@pValsAr][nValsGrpOffset + 2] := @rawGyroZ
+    LONG[@pValsAr][nValsGrpOffset + 3] := @gyroX
+    LONG[@pValsAr][nValsGrpOffset + 4] := @gyroY
+    LONG[@pValsAr][nValsGrpOffset + 5] := @gyroZ
+
+    nGrpOffset := 3
+    nVarsInGroup := 6
+    LONG[@pTitlesAr][nGrpOffset] := @nameTitle4
+    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
+     ' populate the empty name/value ptr tables
+    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
+    LONG[@pNamesAr][nValsGrpOffset + 0] := @name40
+    LONG[@pNamesAr][nValsGrpOffset + 1] := @name41
+    LONG[@pNamesAr][nValsGrpOffset + 2] := @name42
+    LONG[@pNamesAr][nValsGrpOffset + 3] := @name43
+    LONG[@pNamesAr][nValsGrpOffset + 4] := @name44
+    LONG[@pNamesAr][nValsGrpOffset + 5] := @name45
+    LONG[@pValsAr][nValsGrpOffset + 0] := @roll
+    LONG[@pValsAr][nValsGrpOffset + 1] := @pitch
+    LONG[@pValsAr][nValsGrpOffset + 2] := @yaw
+    LONG[@pValsAr][nValsGrpOffset + 3] := @unused0
+    LONG[@pValsAr][nValsGrpOffset + 4] := @unused1
+    LONG[@pValsAr][nValsGrpOffset + 5] := @senseTimeMS
+
+    ' tell our table size to reader
+    nGrpOffset := 4
+    LONG[@pTitlesAr][nGrpOffset] := DBG_MAX_VARS_IN_GROUP
+
+PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars | tmpAbsPtr
+'' Return pointers to HDMI-debug data structures for this motor-object instance
+    loadDisplayList()
+    nGroups := DBG_GROUPS_CT
+    pGroupTitles := @pTitlesAr         ' pStr = long[pTitlesAr][grpIdx]
+    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars = long[pVarCtAr][grpIdx]
+    pGroupNames := @pNamesAr           ' pGrpNameAr = long[pNamesAr][grpIdx], pVarName = long[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupVars := @pValsAr             ' pGrpLongVar = long[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    {
+    if showHDMIDebug
+        debug("* -------------")
+        'debug("* 9DOF DAT values: ", uhex_long(@hall), uhex_long_array(@hall, 4))
+        'debug("* 9DOF VAR values: ", uhex_long(@tvRpm_x10), uhex_long_array(@tvRpm_x10, 4))
+        debug("* NAMEs SOURCE1: ", uhex_long(@nameTitle1), uhex_byte_array(@nameTitle1, dataLen1))
+        debug("* NAMEs SOURCE2: ", uhex_long(@nameTitle2), uhex_byte_array(@nameTitle2, dataLen2))
+        debug("* NAMEs SOURCE3: ", uhex_long(@nameTitle3), uhex_byte_array(@nameTitle3, dataLen3))
+        debug("* -------------")
+        debug("* 9DOF DL title: ", uhex_long(@pTitlesAr), uhex_long_array(@pTitlesAr, DBG_GROUPS_CT + 1))
+        debug("* 9DOF DL VarCt: ", uhex_long(@pVarCtAr), uhex_long_array(@pVarCtAr, DBG_GROUPS_CT))
+        debug("* 9DOF DL Names: ", uhex_long(@pNamesAr), uhex_long_array(@pNamesAr, DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP))
+        debug("* 9DOF DL Values: ", uhex_long(@pValsAr), uhex_long_array(@pValsAr, DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP))
+        debug("* -------------")
+        debug("* 9DOF PARM values: ", uhex_long(@nGroups), uhex_long_array(@nGroups, 5))
+        debug("* -------------")
+        debug("* 9DOF Sent: ", udec(nGroups), uhex_long(pGroupTitles), uhex_long(pGroupNames), uhex_long(pGroupVarCts), uhex_long(pGroupVars))
+        debug("* =============")
+    '}
+
+
+CON { license }
+
+{{
+ -------------------------------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2022 Iron Sheep Productions, LLC
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+ =================================================================================================
+}}
