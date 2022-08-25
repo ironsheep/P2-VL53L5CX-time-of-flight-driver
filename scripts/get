@@ -11,3 +11,4 @@ fi
 
 (set -x;cp -p "${SRC_SPIN_DIR}"/*.spin2 "${DST_SPIN_DIR}")
 (set -x;cp -p "${SRC_SPIN_DIR}"/p2font16 "${DST_SPIN_DIR}")
+(set -x;cp -p "${SRC_SPIN_DIR}"/*.dat "${DST_SPIN_DIR}")

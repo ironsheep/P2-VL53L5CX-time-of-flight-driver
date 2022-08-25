@@ -51,8 +51,126 @@ CON { Interface constants }
 ' devcie found (or not) responses
 #0, DVC_NOT_FOUND, DVC_ADDR0, DVC_ADDR1
 
-    VL53L5CX_STATUS_OK  = 0
-    VL53L5CX_STATUS_ERROR = (-1)
+' method return values
+'  VL53L5CX_STATUS_OK indicates that VL53L5 sensor has no error.
+    VL53L5CX_STATUS_OK              = 0
+'  VL53L5CX_MCU_ERROR is used to indicate a MCU issue.
+    VL53L5CX_MCU_ERROR              = 66
+    VL53L5CX_STATUS_INVALID_PARAM   = 127
+'  VL53L5CX_STATUS_ERROR indicates that something is wrong (value, I2C access, ...)
+    VL53L5CX_STATUS_ERROR           = (-1)
+
+' The default power mode is VL53L5CX_POWER_MODE_WAKEUP. User can choose
+'  the mode VL53L5CX_POWER_MODE_SLEEP to save power consumption is the device
+'  is not used. The low power mode retains the firmware and the configuration.
+'  Both modes can be changed using function setPowerMode().
+    VL53L5CX_POWER_MODE_SLEEP       = 0
+    VL53L5CX_POWER_MODE_WAKEUP      = 1
+
+'  VL53L5CX_RANGING_MODE_CONTINUOUS and
+'  VL53L5CX_RANGING_MODE_AUTONOMOUS are used to change the ranging mode.
+'  Autonomous mode can be used to set a precise integration time, whereas
+'  continuous is always maximum.
+    VL53L5CX_RANGING_MODE_CONTINUOUS = 1
+    VL53L5CX_RANGING_MODE_AUTONOMOUS = 3
+
+'  VL53L5CX_TARGET_ORDER_STRONGEST or VL53L5CX_TARGET_ORDER_CLOSEST
+'    are used to select the target order for data output.
+    VL53L5CX_TARGET_ORDER_CLOSEST = 1
+    VL53L5CX_TARGET_ORDER_STRONGEST = 2
+
+'  VL53L5CX_RESOLUTION_4X4 or VL53L5CX_RESOLUTION_8X8 allows
+'   setting sensor in 4x4 mode or 8x8 mode, using function
+'   setResolution().
+    VL53L5CX_RESOLUTION_4X4 = 16
+    VL53L5CX_RESOLUTION_8X8 = 64
+
+'  VL53L5CX_NB_TARGET_PER_ZONE is used to define the number of target per zone sent
+'   through I2C. This value can be changed by user, in order to tune I2C
+'   transaction, and also the total memory size (a lower number of target per
+'   zone means a lower RAM). The value must be between 1 and 4.
+
+    VL53L5CX_NB_TARGET_PER_ZONE		        = 1
+
+    ' if TARGET_PER_ZONE == 1
+    ' 32-bit values
+    VL53L5CX_TPZ_START_BH			        = $0000000D
+    VL53L5CX_TPZ_METADATA_BH			    = $54B400C0
+    VL53L5CX_TPZ_COMMONDATA_BH			    = $54C00040
+    VL53L5CX_TPZ_AMBIENT_RATE_BH		    = $54D00104
+    VL53L5CX_TPZ_SPAD_COUNT_BH			    = $55D00404
+    VL53L5CX_TPZ_NB_TARGET_DETECTED_BH	    = $CF7C0401
+    VL53L5CX_TPZ_SIGNAL_RATE_BH			    = $CFBC0404
+    VL53L5CX_TPZ_RANGE_SIGMA_MM_BH		    = $D2BC0402
+    VL53L5CX_TPZ_DISTANCE_BH			    = $D33C0402
+    VL53L5CX_TPZ_REFLECTANCE_BH			    = $D43C0401
+    VL53L5CX_TPZ_TARGET_STATUS_BH		    = $D47C0401
+    VL53L5CX_TPZ_MOTION_DETECT_BH		    = $CC5008C0
+
+    ' 16-bit values
+    VL53L5CX_TPZ_METADATA_IDX			    = $54B4
+    VL53L5CX_TPZ_SPAD_COUNT_IDX			    = $55D0
+    VL53L5CX_TPZ_AMBIENT_RATE_IDX		    = $54D0
+    VL53L5CX_TPZ_NB_TARGET_DETECTED_IDX	    = $CF7C
+    VL53L5CX_TPZ_SIGNAL_RATE_IDX		    = $CFBC
+    VL53L5CX_TPZ_RANGE_SIGMA_MM_IDX		    = $D2BC
+    VL53L5CX_TPZ_DISTANCE_IDX			    = $D33C
+    VL53L5CX_TPZ_REFLECTANCE_EST_PC_IDX	    = $D43C
+    VL53L5CX_TPZ_TARGET_STATUS_IDX		    = $D47C
+    VL53L5CX_TPZ_MOTION_DETEC_IDX		    = $CC50
+
+    ' (else) if Target Per Zone <> 1
+    ' 32-bit values
+    VL53L5CX_START_BH			            = $0000000D
+    VL53L5CX_METADATA_BH			        = $54B400C0
+    VL53L5CX_COMMONDATA_BH			        = $54C00040
+    VL53L5CX_AMBIENT_RATE_BH		        = $54D00104
+    VL53L5CX_NB_TARGET_DETECTED_BH		    = $57D00401
+    VL53L5CX_SPAD_COUNT_BH			        = $55D00404
+    VL53L5CX_SIGNAL_RATE_BH			        = $58900404
+    VL53L5CX_RANGE_SIGMA_MM_BH		        = $64900402
+    VL53L5CX_DISTANCE_BH			        = $66900402
+    VL53L5CX_REFLECTANCE_BH			        = $6A900401
+    VL53L5CX_TARGET_STATUS_BH		        = $6B900401
+    VL53L5CX_MOTION_DETECT_BH		        = $CC5008C0
+
+    ' 16-bit values
+    VL53L5CX_METADATA_IDX			        = $54B4
+    VL53L5CX_SPAD_COUNT_IDX			        = $55D0
+    VL53L5CX_AMBIENT_RATE_IDX		        = $54D0
+    VL53L5CX_NB_TARGET_DETECTED_IDX		    = $57D0
+    VL53L5CX_SIGNAL_RATE_IDX		        = $5890
+    VL53L5CX_RANGE_SIGMA_MM_IDX		        = $6490
+    VL53L5CX_DISTANCE_IDX			        = $6690
+    VL53L5CX_REFLECTANCE_EST_PC_IDX		    = $6A90
+    VL53L5CX_TARGET_STATUS_IDX		        = $6B90
+    VL53L5CX_MOTION_DETEC_IDX		        = $CC50
+
+' Inner Macro for API. Not for user, only for development.
+
+    VL53L5CX_NVM_DATA_SIZE		            = 492
+    VL53L5CX_CONFIGURATION_SIZE	            = 972
+    VL53L5CX_OFFSET_BUFFER_SIZE	            = 488
+    VL53L5CX_XTALK_BUFFER_SIZE	            = 776
+
+    VL53L5CX_DCI_ZONE_CONFIG	            = $5450
+    VL53L5CX_DCI_FREQ_HZ		            = $5458
+    VL53L5CX_DCI_INT_TIME		            = $545C
+    VL53L5CX_DCI_FW_NB_TARGET	            = $5478
+    VL53L5CX_DCI_RANGING_MODE	            = $AD30
+    VL53L5CX_DCI_DSS_CONFIG		            = $AD38
+    VL53L5CX_DCI_TARGET_ORDER	            = $AE64
+    VL53L5CX_DCI_SHARPENER		            = $AED8
+    VL53L5CX_DCI_MOTION_DETECTOR_CFG        = $BFAC
+    VL53L5CX_DCI_SINGLE_RANGE	            = $CD5C
+    VL53L5CX_DCI_OUTPUT_CONFIG	            = $CD60
+    VL53L5CX_DCI_OUTPUT_ENABLES	            = $CD68
+    VL53L5CX_DCI_OUTPUT_LIST	            = $CD78
+    VL53L5CX_DCI_PIPE_CONTROL	            = $CF78
+
+    VL53L5CX_UI_CMD_STATUS		            = $2C00
+    VL53L5CX_UI_CMD_START		            = $2C04
+    VL53L5CX_UI_CMD_END		                = $2FFF
 
 con { fixed io pins }
 
@@ -94,8 +212,8 @@ CON { driver Settings }
     MODE_READ               = %0000_0001
     MODE_WRITE              = %0000_0000
 
-    VL53L5CX_I2C_ADDR_0      = $52 >> 1
-    VL53L5CX_I2C_ADDR_1      = $54 >> 1
+    VL53L5CX_I2C_ADDR_0      = $52
+    VL53L5CX_I2C_ADDR_1      = $54
 
 PUB enableDebug(bEnable)
     '' turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object)
@@ -128,7 +246,7 @@ PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent
         if bShowDebug
             'debug(`snsLog '* Started' 10)
         if bDeviceFound
-            is_alive()
+            isAlive()
 
 PUB configDefault()
     '' Configure the device for normal use
@@ -146,8 +264,10 @@ PUB stop()
     ' no i2c_buss call needed, simply release all our pins
     if bPinsSetUp
         floatPins()
+{
         if bShowDebug
-            'debug(`snsLog '* Stopped' 10)
+            debug(`snsLog '* Stopped' 10)
+'}
 
 PRI setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : ok
     ' Configure pin numbers if not already
@@ -215,10 +335,10 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
     pinh(pin_lpn)               ' assert LPn (enable device selection)
 
     bFoundAddr0 := bFoundAddr1 := false
-    if(i2c_bus.present((VL53L5CX_I2C_ADDR_1 << 1 | MODE_WRITE)))
+    if(i2c_bus.present((VL53L5CX_I2C_ADDR_1 & $fe | MODE_WRITE)))
         bFoundAddr1 := true
     else
-        if(i2c_bus.present((VL53L5CX_I2C_ADDR_0 << 1 | MODE_WRITE)))
+        if(i2c_bus.present((VL53L5CX_I2C_ADDR_0 & $fe | MODE_WRITE)))
             bFoundAddr0 := true
     i2c_bus.stop()
 
@@ -242,42 +362,275 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
 CON { Device Registers - best we can tell }
 
     VL53L5CX_REG_CONTROL = $7fff
-    VL53L5CX_CTL_VAL_CONFIG = $00
-    VL53L5CX_CTL_VAL_RUN    = $02
+    VL53L5CX_VAL_CTL_CONFIG = $00
+    VL53L5CX_VAL_CTL_FW     = $01
+    VL53L5CX_VAL_CTL_RUN    = $02
+    VL53L5CX_VAL_CTL_FWBANK0    = $09
+    VL53L5CX_VAL_CTL_FWBANK1    = $0A
+    VL53L5CX_VAL_CTL_FWBANK2    = $0B
 
     VL53L5CX_REG_DVC_ID = $0000
     VL53L5CX_REG_REV_ID = $0001
 
     VL53L5CX_REG_DVC_ADDR = $0004
 
+    TMP_SIZE_IN_BYTES = 30
+
+DAT
+
+  tempBuffer BYTE 0[TMP_SIZE_IN_BYTES]
+
+PUB getRangingMode(uint8_t *p_ranging_mode) : status, eRangingMode | bStatusOK
+
+	status := VL53L5CX_STATUS_OK
+
+	' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
+    bStatusOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+
+	if (BYTE[@tempBuffer][1] == 1)
+		eRangingMode := VL53L5CX_RANGING_MODE_CONTINUOUS
+	else
+		eRangingMode := VL53L5CX_RANGING_MODE_AUTONOMOUS
 
 
-PUB set_i2c_address(i2cAddress) : status
+PUB setRangingMode(ranging_mode) : status | single_range, bStatusOK
 
-    status := VL53L5CX_STATUS_OK
+	status := VL53L5CX_STATUS_OK
+	single_range := 0
 
-    status := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_CONFIG)          ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-    status := writeByte(VL53L5CX_REG_DVC_ADDR, i2cAddress >> 1)                 ' |= WrByte(&(p_dev->platform), 0x4, (uint8_t)(i2c_address >> 1))
+	' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
+    bStatusOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+
+	case ranging_mode
+	    VL53L5CX_RANGING_MODE_CONTINUOUS:
+            BYTE[@tempBuffer][1] := 1
+            BYTE[@tempBuffer][3] := 3
+            single_range := 0
+
+	    VL53L5CX_RANGING_MODE_AUTONOMOUS:
+            BYTE[@tempBuffer][1] := 3
+            BYTE[@tempBuffer][3] := 2
+            single_range := 1
+
+        other:
+            status := VL53L5CX_STATUS_INVALID_PARAM
+
+    ' if request is valid, configure our device
+    if status <> VL53L5CX_STATUS_INVALID_PARAM
+        ' status |= vl53l5cx_dci_write_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, (uint16_t)8)
+        bStatusOK := writeBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+        ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
+        ' FIXME: single_range is now compiler byte order but what does device need? VERIFY THIS!!!
+        bStatusOK := writeBytes(VL53L5CX_DCI_SINGLE_RANGE, 4, @single_range)
+
+
+PUB begin()
+'' yep, exrtacted from example code, ready our TOF Sensor
+    pinl(pin_rst)    ' de-assert
+    pinl(pin_lpn)    ' de-assert
+
+PUB end()
+'' yep, exrtacted from example code, stop our TOF Sensor
+    pinf(pin_rst)    ' make this an input
+    pinf(pin_lpn)    ' make this an input
+
+PUB initSensor()
+    ' turn off: vl53l5cx_off()
+    ' turn on: vl53l5cx_on()
+    ' set desired I2C address: vl53l5cx_set_i2c_address(addr)
+    '   return VL53L5CX_STATUS_ERROR if failed to set
+    ' see if alive: vl53l5cx_is_alive(&isAlive)
+    '   return VL53L5CX_STATUS_ERROR if not
+    ' init device: vl53l5cx_init()
+    '   return VL53L5CX_STATUS_ERROR if failed to init
+    ' return VL53L5CX_STATUS_OK
+CON
+
+    VL53L5CX_TPZ_FW_NBTAR_RANGING = 2
+    VL53L5CX_FW_NBTAR_RANGING = VL53L5CX_NB_TARGET_PER_ZONE
+
+
+
+PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusOK, bTempStatusOK, tmp
+
+	' uint8_t tmp, status = VL53L5CX_STATUS_OK
+    eDvcStatus := VL53L5CX_STATUS_OK
+
+	' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TARGET_PER_ZONE, 0x00, 0x01, 0x00}
+    pipe_ctrl.byte[0] := VL53L5CX_NB_TARGET_PER_ZONE
+    pipe_ctrl.byte[1] := 0
+    pipe_ctrl.byte[2] := 1
+    pipe_ctrl.byte[3] := 0
+
+	single_range := 1
+
+	p_dev->default_xtalk = (uint8_t *)VL53L5CX_DEFAULT_XTALK
+	p_dev->default_configuration = (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION
+
+	' SW reboot sequence
+
+    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+	bStatusOK |= writeByte($0009, 4)                                        ' status |= WrByte(&(p_dev->platform), 0x0009, 0x04)
+	bStatusOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
+	bStatusOK |= writeByte($000A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x03)
+    bTempStatusOK, tmp := readByte(VL53L5CX_REG_CONTROL)                    ' status |= RdByte(&(p_dev->platform), 0x7fff, &tmp)
+    bStatusOK |= bTempStatusOK
+	bStatusOK |= writeByte($000C, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x01)
+	bStatusOK |= writeByte($0101, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x0101, 0x00)
+	bStatusOK |= writeByte($0102, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x0102, 0x00)
+	bStatusOK |= writeByte($010A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x010A, 0x01)
+	bStatusOK |= writeByte($4002, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x01)
+	bStatusOK |= writeByte($4002, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x00)
+	bStatusOK |= writeByte($010A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x010A, 0x03)
+	bStatusOK |= writeByte($0103, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x0103, 0x01)
+	bStatusOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
+	bStatusOK |= writeByte($000A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x000F, 0x43)
+	waitus(1)                                                               ' status |= WaitMs(&(p_dev->platform), 1)
+
+	bStatusOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
+	bStatusOK |= writeByte($000A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x01)
+	waitus(100)                                                             ' status |= WaitMs(&(p_dev->platform), 100)
+
+	' Wait for sensor booted (several ms required to get sensor ready )
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusOK |= pollForAnswer(1, 0, $06, $FF, 1)                           ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 1)
+
+	bStatusOK |= writeByte($000E, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000E, 0x01)
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+
+	' Enable FW access
+	bStatusOK |= writeByte($0003, $0D)                                      ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+    bStatusOK |= pollForAnswer(1, 0, $21, $10, $10)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+
+	' Enable host access to GO1
+	bStatusOK := writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
+
+	' Power ON status
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+	bStatusOK |= writeByte($101, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x101, 0x00)
+	bStatusOK |= writeByte($102, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x102, 0x00)
+	bStatusOK |= writeByte($10A, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x010A, 0x01)
+	bStatusOK |= writeByte($4002, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x01)
+	bStatusOK |= writeByte($4002, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x00)
+	bStatusOK |= writeByte($10A, 3)                                         ' status |= WrByte(&(p_dev->platform), 0x010A, 0x03)
+	bStatusOK |= writeByte($103, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x103, 0x01)
+	bStatusOK |= writeByte($400F, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x400F, 0x00)
+	bStatusOK |= writeByte($21A, $43)                                       ' status |= WrByte(&(p_dev->platform), 0x21A, 0x43)
+	bStatusOK |= writeByte($21A, 3)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x03)
+	bStatusOK |= writeByte($21A, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x01)
+	bStatusOK |= writeByte($21A, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x00)
+	bStatusOK |= writeByte($219, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x219, 0x00)
+	bStatusOK |= writeByte($21B, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x21B, 0x00)
+
+	' Wake up MCU
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+	bStatusOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+	bStatusOK |= writeByte($0020, 7)                                        ' status |= WrByte(&(p_dev->platform), 0x0020, 0x07)
+	bStatusOK |= writeByte($0020, 6)                                        ' status |= WrByte(&(p_dev->platform), $0020, 0x06)
+	' Download FW into VL53L5
+    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK0)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x09)
+	status |= writeBytes(0, $8000, @BYTE[@VL53L5CX_FIRMWARE][0])            ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) &VL53L5CX_FIRMWARE[0], 0x8000)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK1)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0a)
+	status |= writeBytes(0, $8000, @BYTE[@VL53L5CX_FIRMWARE][$8000])        ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x8000], 0x8000)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK2)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0b)
+	status |= writeBytes(0, $5000, @BYTE[@VL53L5CX_FIRMWARE][$10000])       ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x10000], 0x5000)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+
+	' Check if FW correctly downloaded
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+	bStatusOK |= writeByte($03, $0D)                                        ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+	opStatusOK := pollForAnswer(1, 0, $21, $10, $10)                        ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10) //0x10
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+	bStatusOK |= writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
+
+	' Reset MCU and wait boot
+	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+	status |= WrByte(&(p_dev->platform), 0x114, 0x00)
+	status |= WrByte(&(p_dev->platform), 0x115, 0x00)
+	status |= WrByte(&(p_dev->platform), 0x116, 0x42)
+	status |= WrByte(&(p_dev->platform), 0x117, 0x00)
+	status |= WrByte(&(p_dev->platform), 0x0B, 0x00)
+	status |= WrByte(&(p_dev->platform), 0x0C, 0x00)
+	status |= WrByte(&(p_dev->platform), 0x0B, 0x01)
+	status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)                  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+
+	' Get offset NVM data and store them into the offset buffer
+	'status |= WrMulti(&(p_dev->platform), 0x2fd8, (uint8_t *)VL53L5CX_GET_NVM_CMD, sizeof(VL53L5CX_GET_NVM_CMD))
+    status |= writeBytes(0x2fd8, VL53L5CX_GET_NVM_CMD_LEN, @VL53L5CX_GET_NVM_CMD)
+
+	'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 0, VL53L5CX_UI_CMD_STATUS, 0xff, 2)
+    opStatusOK := pollForAnswer(4, 0, VL53L5CX_UI_CMD_STATUS, $FF, 2)
+
+	' status |= RdMulti(&(p_dev->platform), VL53L5CX_UI_CMD_START, p_dev->temp_buffer, VL53L5CX_NVM_DATA_SIZE)
+    eDvcStatus |= readBytes(VL53L5CX_UI_CMD_START, VL53L5CX_NVM_DATA_SIZE, @tempBuffer)
+
+	' (void)memcpy(p_dev->offset_data, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    BYTEMOVE(p_dev->offset_data, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+
+	status |= _vl53l5cx_send_offset_data(p_dev, VL53L5CX_RESOLUTION_4X4)
+
+	' Set default Xtalk shape. Send Xtalk to sensor
+	' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+    BYTEMOVE(p_dev->xtalk_data, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+
+
+	status |= _vl53l5cx_send_xtalk_data(p_dev, VL53L5CX_RESOLUTION_4X4)
+
+	' Send default configuration to VL53L5CX firmware
+	' status |= WrMulti(&(p_dev->platform), 0x2c34, (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION, sizeof(VL53L5CX_DEFAULT_CONFIGURATION))
+    status |= writeBytes(0x2c34, VL53L5CX_DEFAULT_CONFIG_LEN, @VL53L5CX_DEFAULT_CONFIGURATION)
+
+	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    opStatusOK := pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+
+	status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
+
+    if VL53L5CX_NB_TARGET_PER_ZONE <> 1
+        tmp = VL53L5CX_NB_TARGET_PER_ZONE
+        status |= vl53l5cx_dci_replace_data(p_dev, p_dev->temp_buffer,
+                                            VL53L5CX_DCI_FW_NB_TARGET, 16,
+                                            (uint8_t *)&tmp, 1, 0x0C)
+
+	' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
+    status |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, 4, @single_range)   ' write 32-bit value
+
+
+PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusOK
+
+    eDvcStatus := VL53L5CX_STATUS_OK
+
+    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)          ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusOK |= writeByte(VL53L5CX_REG_DVC_ADDR, i2cAddress >> 1)                 ' |= WrByte(&(p_dev->platform), 0x4, (uint8_t)(i2c_address >> 1))
                                                                                 ' p_dev->platform.address = i2c_address
-    status := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_RUN)             ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)             ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    if not bStatusOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+
     dvcI2CAddr := i2cAddress
 
-PUB is_alive() : status, bIsAlive | device_id, revision_id, ok
+PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusOK, bTempStatusOK
 
-  status := VL53L5CX_STATUS_OK
+    eDvcStatus := VL53L5CX_STATUS_OK
 
-  ok := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_CONFIG)                ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-  ok, device_id := readByte(VL53L5CX_REG_DVC_ID)                                ' status |= RdByte(&(p_dev->platform), 0, &device_id)
-  ok, revision_id := readByte(VL53L5CX_REG_REV_ID)                              ' status |= RdByte(&(p_dev->platform), 1, &revision_id)
-  ok := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_CTL_VAL_RUN)                   ' status := writeByte($7fff, $02)             ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)               ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bTempStatusOK, device_id := readByte(VL53L5CX_REG_DVC_ID)                           ' |= RdByte(&(p_dev->platform), 0, &device_id)
+    bStatusOK |= bTempStatusOK
+    bTempStatusOK, revision_id := readByte(VL53L5CX_REG_REV_ID)                         ' |= RdByte(&(p_dev->platform), 1, &revision_id)
+    bStatusOK |= bTempStatusOK
+    bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)                  ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    if not bStatusOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
-  if ((device_id == $F0) and (revision_id == $02))
-    bIsAlive := TRUE
-    debug("TOF: is alive!")
-  else
-    bIsAlive := FALSE
-
-
+    if ((device_id == $F0) and (revision_id == $02))
+        bIsAlive := TRUE
+        debug("TOF: is alive!")
+    else
+        bIsAlive := FALSE
 
 PUB getIntPinState() : bPinState | rawPin
     '' Return interpreted value of Interrupt pin where 1 = TRUE, 0 = FALSE
@@ -285,6 +638,29 @@ PUB getIntPinState() : bPinState | rawPin
     bPinState := (rawPin == 0) ? false : true
     'if bShowDebug
         'debug(`snsLog ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
+
+PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : status | timeout, bStatusOK
+    status := VL53L5CX_STATUS_OK
+
+    timeout := 0
+
+    repeat
+        'status |= RdMulti(&(p_dev->platform), addr16, p_dev->temp_buffer, size8)
+        bStatusOK := readBytes(addr16, size8, @tempBuffer)
+        ' status |= WaitMs(&(p_dev->platform), 10)
+        waitus
+
+        if (timeout >= 200) '  2s timeout
+            ' status |= p_dev->temp_buffer[2]
+            status |= BYTE[@tempBuffer][2]
+        elseif ((size8 >= 4) and (BYTE[@tempBuffer][2] >= $7f))
+            status := VL53L5CX_MCU_ERROR
+            quit
+        else
+            timeout++
+
+    while ((BYTE[@tempBuffer][posn8] & mask8) != expectedValue8)
+
 
 CON  { ---- Device reads & writes ---- }
 
@@ -299,11 +675,29 @@ PUB writeByte(regAddr16, dataValue8) : ok | ackbit
     ackBit := i2c_bus.write(dataValue8)
     ok |= ackbit
     i2c_bus.stop()
-    waitms(2)  ' after each write!
 
     'if bShowDebug
     ' following is more than 10ms...
     '    term.fstr3(string("* writeByte(0x%.02x)=0x%.02x ok:%d' 10), regAddr16, dataValue8, ok)
+
+PUB writeBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAckNak, result8
+    '' Write {byteCount} BYTEs from BYTE array located at {pByteStore} -  to {regAddr16}+0, to {regAddr16}+1,
+    ''  to {regAddr16}+2 and so on
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    repeat byteIndex from 0 to byteCount - 1
+        endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
+        ackBit := i2c_bus.write(BYTE [pByteStore][byteIndex])
+    i2c_bus.stop()
+
+    'if bShowDebug
+    ' following is more than 10ms...
+    '    term.fstr3(string("* writeBytes(0x%.02x, ct=%d)=0x%.04x ok:%d' 10), regAddr16, byteCount, pByteStore, ok)
+
 
 PUB readByte(regAddr16) : ok, result8 | ackbit
     '' Read {result16} from register {regAddr16}
@@ -321,6 +715,32 @@ PUB readByte(regAddr16) : ok, result8 | ackbit
     'if bShowDebug
     '    'debug(`snsLog ' * readByte(0x%.02x) ok:%d, byt=0x%.02x, ret %d' 10), regAddr16, ok, result8, result8)
     debug(" -rdBy: ", udec(ok), uhex_byte(regAddr16), uhex_byte(result8))
+
+PUB readBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAckNak, result8
+    '' Read {byteCount} BYTEs starting from register {regAddr16} - byte from {regAddr16},
+    ''  byte from {regAddr16}+1, byte from {regAddr16}+2, byte from {regAddr16}+3 and so on
+    ''  placing them into BYTE array located at {pByteStore}
+    'if bShowDebug
+    '    term.fstr2(string("* readBytes(0x%.02x, ct=%d)' 10), regAddr16, byteCount)
+    i2c_bus.start()
+    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
+    ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
+    i2c_bus.start()
+    ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
+    ok |= ackbit
+    repeat byteIndex from 0 to byteCount - 1
+        endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
+        result8 := i2c_bus.read(endAckNak)
+        result8 := result8 signx 7
+        BYTE [pByteStore][byteIndex] := result8
+        'if bShowDebug
+        '    term.fstr5(string(" -- readBytes(0x%.02x) ok:%d, BYTE[%d]ret 0x%.02x(%d)' 10), regAddr16 + byteIndex, ok, byteIndex, result8, result8)
+    i2c_bus.stop()
+    'if bShowDebug
+    '    term.fstr3(string(" -- readBytes(0x%.02x, ct=%d) ok:%d' 10), regAddr16, byteCount, ok)
 
 PUB writeWord(regAddr16, dataValue16) : ok | ackbit
     '' Write {dataValue16} to register {regAddr16} - hi byte to {regAddr16}, lo byte to {regAddr16}+1
@@ -360,30 +780,6 @@ PUB readWord(regAddr16) : ok, result16 | ackbit
     '    term.fstr5(string("* readWord(0x%.02x) ok:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr16, ok, result16.byte[1], result16.byte[0], result16)
     debug(" -rdWd: ", udec(ok), uhex_byte(regAddr16), uhex_word(result16))
 
-PUB readBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAckNak, result8
-    '' Read {result16} from register {regAddr16}
-    'if bShowDebug
-    '    term.fstr2(string("* readBytes(0x%.02x, ct=%d)' 10), regAddr16, byteCount)
-    i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    i2c_bus.start()
-    ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
-    ok |= ackbit
-    repeat byteIndex from 0 to byteCount - 1
-        endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
-        result8 := i2c_bus.read(endAckNak)
-        result8 := result8 signx 7
-        BYTE [pByteStore][byteIndex] := result8
-        'if bShowDebug
-        '    term.fstr5(string(" -- readBytes(0x%.02x) ok:%d, BYTE[%d]ret 0x%.02x(%d)' 10), regAddr16 + byteIndex, ok, byteIndex, result8, result8)
-    i2c_bus.stop()
-    'if bShowDebug
-    '    term.fstr3(string(" -- readBytes(0x%.02x, ct=%d) ok:%d' 10), regAddr16, byteCount, ok)
-
 PUB readWords(regAddr16, wordCount, pWordStore) : ok | ackbit, wordIndex, endAckNak, result16
     '' Read {wordCount} WORDs starting from register {regAddr16} - hi byte from {regAddr16},
     ''  lo byte from {regAddr16}+1, hi byte from {regAddr16}+2, lo byte from {regAddr16}+3 and so on
@@ -412,6 +808,472 @@ PUB readWords(regAddr16, wordCount, pWordStore) : ok | ackbit, wordIndex, endAck
     repeat wordIndex from 0 to wordCount - 1
         debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordStore][wordIndex]))
 
+DAT { fixed driver tables }
+
+' This buffer contains the VL53L5CX default Xtalk data.
+    VL53L5CX_DEFAULT_XTALK      BYTE     $9f,  $d8,  $00,  $c0
+                                BYTE     $03,  $20,  $09,  $60
+                                BYTE     $0b,  $08,  $08,  $17
+                                BYTE     $08,  $08,  $08,  $03
+                                BYTE     $9f,  $e4,  $01,  $40
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $01,  $e0,  $00,  $20
+                                BYTE     $00,  $00,  $00,  $20
+                                BYTE     $9f,  $f8,  $00,  $40
+                                BYTE     $17,  $17,  $17,  $17
+                                BYTE     $9f,  $fc,  $04,  $04
+                                BYTE     $00,  $00,  $46,  $a4
+                                BYTE     $00,  $00,  $37,  $66
+                                BYTE     $00,  $00,  $26,  $60
+                                BYTE     $00,  $00,  $1c,  $bc
+                                BYTE     $00,  $00,  $17,  $73
+                                BYTE     $00,  $00,  $11,  $25
+                                BYTE     $00,  $00,  $11,  $07
+                                BYTE     $00,  $00,  $0e,  $63
+                                BYTE     $00,  $00,  $8b,  $4c
+                                BYTE     $00,  $00,  $60,  $a2
+                                BYTE     $00,  $00,  $3d,  $c0
+                                BYTE     $00,  $00,  $26,  $aa
+                                BYTE     $00,  $00,  $1b,  $c2
+                                BYTE     $00,  $00,  $18,  $04
+                                BYTE     $00,  $00,  $14,  $97
+                                BYTE     $00,  $00,  $10,  $ed
+                                BYTE     $00,  $01,  $28,  $1b
+                                BYTE     $00,  $00,  $93,  $f0
+                                BYTE     $00,  $00,  $57,  $61
+                                BYTE     $00,  $00,  $30,  $2b
+                                BYTE     $00,  $00,  $20,  $aa
+                                BYTE     $00,  $00,  $1a,  $b6
+                                BYTE     $00,  $00,  $15,  $c3
+                                BYTE     $00,  $00,  $16,  $0e
+                                BYTE     $00,  $01,  $7f,  $bb
+                                BYTE     $00,  $00,  $ad,  $58
+                                BYTE     $00,  $00,  $71,  $af
+                                BYTE     $00,  $00,  $36,  $d9
+                                BYTE     $00,  $00,  $22,  $fb
+                                BYTE     $00,  $00,  $1c,  $96
+                                BYTE     $00,  $00,  $18,  $83
+                                BYTE     $00,  $00,  $17,  $96
+                                BYTE     $00,  $01,  $90,  $00
+                                BYTE     $00,  $00,  $97,  $d6
+                                BYTE     $00,  $00,  $66,  $3b
+                                BYTE     $00,  $00,  $33,  $0a
+                                BYTE     $00,  $00,  $20,  $cd
+                                BYTE     $00,  $00,  $19,  $38
+                                BYTE     $00,  $00,  $16,  $a5
+                                BYTE     $00,  $00,  $14,  $bb
+                                BYTE     $00,  $00,  $af,  $cf
+                                BYTE     $00,  $00,  $65,  $7d
+                                BYTE     $00,  $00,  $3d,  $93
+                                BYTE     $00,  $00,  $29,  $d1
+                                BYTE     $00,  $00,  $19,  $4e
+                                BYTE     $00,  $00,  $15,  $ba
+                                BYTE     $00,  $00,  $11,  $c6
+                                BYTE     $00,  $00,  $12,  $7f
+                                BYTE     $00,  $00,  $73,  $1d
+                                BYTE     $00,  $00,  $42,  $2c
+                                BYTE     $00,  $00,  $2e,  $82
+                                BYTE     $00,  $00,  $1e,  $80
+                                BYTE     $00,  $00,  $18,  $1c
+                                BYTE     $00,  $00,  $13,  $2d
+                                BYTE     $00,  $00,  $0f,  $c6
+                                BYTE     $00,  $00,  $0f,  $85
+                                BYTE     $00,  $00,  $4f,  $04
+                                BYTE     $00,  $00,  $33,  $e9
+                                BYTE     $00,  $00,  $1f,  $06
+                                BYTE     $00,  $00,  $18,  $40
+                                BYTE     $00,  $00,  $13,  $2c
+                                BYTE     $00,  $00,  $12,  $97
+                                BYTE     $00,  $00,  $0e,  $01
+                                BYTE     $00,  $00,  $0d,  $ac
+                                BYTE     $a0,  $fc,  $01,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $03
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a1,  $0c,  $01,  $00
+                                BYTE     $00,  $00,  $00,  $80
+                                BYTE     $00,  $00,  $00,  $03
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a1,  $1c,  $00,  $c0
+                                BYTE     $00,  $00,  $70,  $eb
+                                BYTE     $0c,  $80,  $01,  $e0
+                                BYTE     $00,  $00,  $00,  $26
+                                BYTE     $a1,  $28,  $09,  $02
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $01,  $00,  $00
+                                BYTE     $00,  $36,  $00,  $03
+                                BYTE     $01,  $d9,  $01,  $43
+                                BYTE     $02,  $33,  $02,  $17
+                                BYTE     $02,  $4b,  $02,  $41
+                                BYTE     $01,  $17,  $02,  $22
+                                BYTE     $00,  $27,  $00,  $5d
+                                BYTE     $00,  $05,  $00,  $11
+                                BYTE     $00,  $00,  $00,  $01
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $48,  $00,  $40
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $4c,  $00,  $81
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $54,  $00,  $81
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $5c,  $00,  $81
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $64,  $00,  $81
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $6c,  $00,  $84
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $a2,  $8c,  $00,  $82
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $00
+                                BYTE     $00,  $00,  $00,  $0F
+                                BYTE     $05,  $01,  $03,  $04
+    VL53L5CX_DEFAULT_XTALK_END
+    VL53L5CX_DEFAULT_XTALK_LEN  LONG   @VL53L5CX_DEFAULT_XTALK_END - @VL53L5CX_DEFAULT_XTALK
+
+    ' This buffer is used to get NVM data.
+    VL53L5CX_GET_NVM_CMD        BYTE   $54,  $00,  $00,  $40
+                                BYTE   $9E,  $14,  $00,  $C0
+                                BYTE   $9E,  $20,  $01,  $40
+                                BYTE   $9E,  $34,  $00,  $40
+                                BYTE   $9E,  $38,  $04,  $04
+                                BYTE   $9F,  $38,  $04,  $02
+                                BYTE   $9F,  $B8,  $01,  $00
+                                BYTE   $9F,  $C8,  $01,  $00
+                                BYTE   $00,  $00,  $00,  $0F
+                                BYTE   $02,  $02,  $00,  $24
+    VL53L5CX_GET_NVM_CMD_END
+    VL53L5CX_GET_NVM_CMD_LEN    LONG   @VL53L5CX_GET_NVM_CMD_END - @VL53L5CX_GET_NVM_CMD
+
+    ' This buffer contains the VL53L5CX default configuration.
+    VL53L5CX_DEFAULT_CONFIGURATION  BYTE     $54,  $50,  $00,  $80
+                                    BYTE     $00,  $04,  $04,  $04
+                                    BYTE     $00,  $00,  $08,  $08
+                                    BYTE     $AD,  $30,  $00,  $80
+                                    BYTE     $02,  $01,  $03,  $03
+                                    BYTE     $00,  $00,  $03,  $00
+                                    BYTE     $AD,  $38,  $01,  $00
+                                    BYTE     $01,  $E0,  $01,  $40
+                                    BYTE     $00,  $40,  $00,  $40
+                                    BYTE     $01,  $00,  $04,  $00
+                                    BYTE     $00,  $00,  $00,  $01
+                                    BYTE     $54,  $58,  $00,  $40
+                                    BYTE     $04,  $1A,  $01,  $00
+                                    BYTE     $54,  $5C,  $01,  $40
+                                    BYTE     $00,  $00,  $27,  $10
+                                    BYTE     $00,  $00,  $0F,  $A0
+                                    BYTE     $0F,  $A0,  $03,  $E8
+                                    BYTE     $02,  $80,  $1F,  $40
+                                    BYTE     $00,  $00,  $05,  $00
+                                    BYTE     $54,  $70,  $00,  $80
+                                    BYTE     $03,  $20,  $03,  $20
+                                    BYTE     $00,  $00,  $00,  $08
+                                    BYTE     $54,  $78,  $01,  $00
+                                    BYTE     $01,  $13,  $00,  $29
+                                    BYTE     $00,  $33,  $00,  $00
+                                    BYTE     $02,  $00,  $00,  $01
+                                    BYTE     $04,  $01,  $08, VL53L5CX_FW_NBTAR_RANGING
+                                    BYTE     $54,  $88,  $01,  $40
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $0C,  $00
+                                    BYTE     $AD,  $48,  $01,  $00
+                                    BYTE     $01,  $F4,  $00,  $00
+                                    BYTE     $03,  $06,  $00,  $10
+                                    BYTE     $08,  $07,  $08,  $07
+                                    BYTE     $00,  $00,  $00,  $08
+                                    BYTE     $AD,  $60,  $01,  $00
+                                    BYTE     $00,  $00,  $00,  $80
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $20,  $1F,  $01,  $F4
+                                    BYTE     $00,  $00,  $1D,  $0A
+                                    BYTE     $AD,  $70,  $00,  $80
+                                    BYTE     $08,  $00,  $1F,  $40
+                                    BYTE     $00,  $00,  $00,  $01
+                                    BYTE     $AD,  $78,  $00,  $80
+                                    BYTE     $00,  $A0,  $03,  $20
+                                    BYTE     $00,  $01,  $01,  $90
+                                    BYTE     $AD,  $80,  $00,  $40
+                                    BYTE     $00,  $00,  $28,  $00
+                                    BYTE     $AD,  $84,  $00,  $80
+                                    BYTE     $00,  $00,  $32,  $00
+                                    BYTE     $03,  $20,  $00,  $00
+                                    BYTE     $AD,  $8C,  $00,  $80
+                                    BYTE     $02,  $58,  $FF,  $38
+                                    BYTE     $00,  $00,  $00,  $0C
+                                    BYTE     $AD,  $94,  $01,  $00
+                                    BYTE     $00,  $01,  $90,  $00
+                                    BYTE     $FF,  $FF,  $FC,  $00
+                                    BYTE     $00,  $00,  $04,  $00
+                                    BYTE     $00,  $00,  $01,  $01
+                                    BYTE     $AD,  $A4,  $00,  $C0
+                                    BYTE     $04,  $80,  $06,  $1A
+                                    BYTE     $00,  $40,  $05,  $80
+                                    BYTE     $00,  $00,  $01,  $06
+                                    BYTE     $AD,  $B0,  $00,  $C0
+                                    BYTE     $04,  $80,  $06,  $1A
+                                    BYTE     $19,  $00,  $05,  $80
+                                    BYTE     $00,  $00,  $01,  $90
+                                    BYTE     $AD,  $BC,  $04,  $40
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $12,  $00,  $25
+                                    BYTE     $00,  $00,  $00,  $06
+                                    BYTE     $00,  $00,  $00,  $05
+                                    BYTE     $00,  $00,  $00,  $05
+                                    BYTE     $00,  $00,  $00,  $06
+                                    BYTE     $00,  $00,  $00,  $04
+                                    BYTE     $00,  $00,  $00,  $0F
+                                    BYTE     $00,  $00,  $00,  $5A
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $09
+                                    BYTE     $0B,  $0C,  $0B,  $0B
+                                    BYTE     $03,  $03,  $11,  $05
+                                    BYTE     $01,  $01,  $01,  $01
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $0D,  $00,  $00
+                                    BYTE     $AE,  $00,  $01,  $04
+                                    BYTE     $00,  $00,  $00,  $04
+                                    BYTE     $00,  $00,  $00,  $08
+                                    BYTE     $00,  $00,  $00,  $0A
+                                    BYTE     $00,  $00,  $00,  $0C
+                                    BYTE     $00,  $00,  $00,  $0D
+                                    BYTE     $00,  $00,  $00,  $0E
+                                    BYTE     $00,  $00,  $00,  $08
+                                    BYTE     $00,  $00,  $00,  $08
+                                    BYTE     $00,  $00,  $00,  $10
+                                    BYTE     $00,  $00,  $00,  $10
+                                    BYTE     $00,  $00,  $00,  $20
+                                    BYTE     $00,  $00,  $00,  $20
+                                    BYTE     $00,  $00,  $00,  $06
+                                    BYTE     $00,  $00,  $05,  $0A
+                                    BYTE     $02,  $00,  $0C,  $08
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $AE,  $40,  $00,  $40
+                                    BYTE     $00,  $00,  $01,  $FF
+                                    BYTE     $AE,  $44,  $00,  $40
+                                    BYTE     $00,  $10,  $04,  $01
+                                    BYTE     $AE,  $48,  $00,  $40
+                                    BYTE     $00,  $00,  $10,  $00
+                                    BYTE     $AE,  $4C,  $00,  $40
+                                    BYTE     $00,  $00,  $00,  $01
+                                    BYTE     $AE,  $50,  $01,  $40
+                                    BYTE     $00,  $00,  $00,  $14
+                                    BYTE     $04,  $00,  $28,  $00
+                                    BYTE     $03,  $20,  $6C,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $25,  $80
+                                    BYTE     $AE,  $64,  $00,  $40
+                                    BYTE     $00,  $00,  $00,  $02
+                                    BYTE     $AE,  $D8,  $01,  $00
+                                    BYTE     $00,  $C8,  $05,  $DC
+                                    BYTE     $00,  $00,  $0C,  $CD
+                                    BYTE     $01,  $04,  $00,  $00
+                                    BYTE     $00,  $00,  $26,  $01
+                                    BYTE     $B5,  $50,  $02,  $82
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B5,  $A0,  $02,  $82
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B5,  $F0,  $00,  $40
+                                    BYTE     $00,  $FF,  $00,  $00
+                                    BYTE     $B3,  $9C,  $01,  $00
+                                    BYTE     $40,  $00,  $05,  $1E
+                                    BYTE     $02,  $1B,  $08,  $7C
+                                    BYTE     $80,  $01,  $12,  $01
+                                    BYTE     $00,  $00,  $08,  $00
+                                    BYTE     $B6,  $C0,  $00,  $C0
+                                    BYTE     $00,  $00,  $60,  $00
+                                    BYTE     $00,  $00,  $20,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $AE,  $A8,  $00,  $40
+                                    BYTE     $00,  $00,  $04,  $05
+                                    BYTE     $AE,  $AC,  $00,  $80
+                                    BYTE     $01,  $00,  $01,  $00
+                                    BYTE     $00,  $02,  $00,  $00
+                                    BYTE     $AE,  $B4,  $00,  $40
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $AE,  $B8,  $00,  $81
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $AE,  $C0,  $00,  $81
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $AE,  $C8,  $00,  $81
+                                    BYTE     $08,  $01,  $01,  $08
+                                    BYTE     $00,  $00,  $00,  $08
+                                    BYTE     $AE,  $D0,  $00,  $81
+                                    BYTE     $01,  $08,  $08,  $08
+                                    BYTE     $00,  $00,  $00,  $01
+                                    BYTE     $B5,  $F4,  $00,  $80
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B5,  $FC,  $00,  $80
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $04,  $00,  $40
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $08,  $00,  $44
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $18,  $00,  $44
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $28,  $00,  $44
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $38,  $00,  $44
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $48,  $01,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $58,  $01,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $B6,  $68,  $01,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $00
+                                    BYTE     $00,  $00,  $00,  $0F
+                                    BYTE     $00,  $01,  $03,  $c8
+    VL53L5CX_DEFAULT_CONFIG_END
+    VL53L5CX_DEFAULT_CONFIG_LEN  LONG    @VL53L5CX_DEFAULT_CONFIG_END - @VL53L5CX_DEFAULT_CONFIGURATION
+
+' This buffer contains the VL53L5CX firmware (MM1.1)
+    VL53L5CX_FIRMWARE     BYTE
+    FILE  "vl53l5cx_mm1_1_fw.dat"   ' load binary data here 86,016 bytes ($15_000)
+    VL53L5CX_FIRMWARE_END
+    VL53L5CX_FIRMWARE_LEN  LONG    @VL53L5CX_FIRMWARE_END - @VL53L5CX_FIRMWARE
 
 CON { --- license --- }
 

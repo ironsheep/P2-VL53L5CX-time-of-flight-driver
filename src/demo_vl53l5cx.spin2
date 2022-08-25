@@ -101,15 +101,29 @@ PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupV
     if senseCog == 0    ' did fail?
         debug("!! ERROR filed to start 9DOF Sense task")
 '}
-    initSensor()
+    locateSensor()
+
+    ' Configure VL53L5CX satellite component.
+    tofSensor.begin()
+
+    tofSensor.initSensor()
+
+    ' Start Measurements
+    tofSensor.startRanging()
 
     repeat  ' halt here for now
 
+    ' start ranging result display loop
+    cog := cogspin(NEWCOG, taskMonitorRanging(), @senseStack) + 1  ' start TOF Listener
+
+
+PRI taskMonitorRanging()
+' TASK: TOF Listener
 
 CON { ------ PRIVATE (Utility) Methods ------ }
 
 
-PRI initSensor() : ok | deviceFound
+PRI locateSensor() : ok | deviceFound
     ' find and configure our mpu9dof device
     debug(`demoLog 'Setup...' 10)
     deviceFound := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
@@ -192,7 +206,7 @@ PRI taskReadSensor() | startTicks, startMS, statusOK
     tofSensor.init(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' set pins to output low... so we can set LA trigger
 
     debug("* taskReadSensor()  started")
-    statusOK := initSensor()    ' start our i2c MPU 9DOF sensor
+    statusOK := locateSensor()    ' start our i2c MPU 9DOF sensor
     if statusOK
         debug("calibration()")
         calibrateSensor()
