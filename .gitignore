@@ -130,3 +130,4 @@ dmypy.json
 src/vl53l5cx_mm1_1_fw.spin2
 src/temp.spin2
 src/f1.spin2
+src/txt.spin2
