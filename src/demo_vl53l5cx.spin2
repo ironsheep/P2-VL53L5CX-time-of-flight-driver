@@ -106,10 +106,12 @@ PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupV
     ' Configure VL53L5CX satellite component.
     tofSensor.begin()
 
+    repeat  ' halt here for now
+
     tofSensor.initSensor()
 
     ' Start Measurements
-    tofSensor.startRanging()
+    'tofSensor.startRanging()
 
     repeat  ' halt here for now
 

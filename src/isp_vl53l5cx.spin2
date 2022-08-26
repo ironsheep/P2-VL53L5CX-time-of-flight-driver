@@ -67,57 +67,57 @@ CON { Interface constants }
     VL53L5CX_POWER_MODE_SLEEP       = 0
     VL53L5CX_POWER_MODE_WAKEUP      = 1
 
-'  VL53L5CX_RANGING_MODE_CONTINUOUS and
-'  VL53L5CX_RANGING_MODE_AUTONOMOUS are used to change the ranging mode.
+'  VL53L5CX_RANG_MODE_CONTINUOUS and
+'  VL53L5CX_RANG_MODE_AUTONOMOUS are used to change the ranging mode.
 '  Autonomous mode can be used to set a precise integration time, whereas
 '  continuous is always maximum.
-    VL53L5CX_RANGING_MODE_CONTINUOUS = 1
-    VL53L5CX_RANGING_MODE_AUTONOMOUS = 3
+    VL53L5CX_RANG_MODE_CONTINUOUS   = 1
+    VL53L5CX_RANG_MODE_AUTONOMOUS   = 3
 
-'  VL53L5CX_TARGET_ORDER_STRONGEST or VL53L5CX_TARGET_ORDER_CLOSEST
+'  VL53L5CX_TGT_ORDER_STRONGEST or VL53L5CX_TGT_ORDER_CLOSEST
 '    are used to select the target order for data output.
-    VL53L5CX_TARGET_ORDER_CLOSEST = 1
-    VL53L5CX_TARGET_ORDER_STRONGEST = 2
+    VL53L5CX_TGT_ORDER_CLOSEST      = 1
+    VL53L5CX_TGT_ORDER_STRONGEST    = 2
 
 '  VL53L5CX_RESOLUTION_4X4 or VL53L5CX_RESOLUTION_8X8 allows
 '   setting sensor in 4x4 mode or 8x8 mode, using function
 '   setResolution().
-    VL53L5CX_RESOLUTION_4X4 = 16
-    VL53L5CX_RESOLUTION_8X8 = 64
+    VL53L5CX_RESOLUTION_4X4         = 16
+    VL53L5CX_RESOLUTION_8X8         = 64
 
-'  VL53L5CX_NB_TARGET_PER_ZONE is used to define the number of target per zone sent
+'  VL53L5CX_NB_TGT_PER_ZONE is used to define the number of target per zone sent
 '   through I2C. This value can be changed by user, in order to tune I2C
 '   transaction, and also the total memory size (a lower number of target per
 '   zone means a lower RAM). The value must be between 1 and 4.
 
-    VL53L5CX_NB_TARGET_PER_ZONE		        = 1
+    VL53L5CX_NB_TGT_PER_ZONE	    = 1
 
     ' if TARGET_PER_ZONE == 1
     ' 32-bit values
-    VL53L5CX_TPZ_START_BH			        = $0000000D
-    VL53L5CX_TPZ_METADATA_BH			    = $54B400C0
-    VL53L5CX_TPZ_COMMONDATA_BH			    = $54C00040
-    VL53L5CX_TPZ_AMBIENT_RATE_BH		    = $54D00104
-    VL53L5CX_TPZ_SPAD_COUNT_BH			    = $55D00404
-    VL53L5CX_TPZ_NB_TARGET_DETECTED_BH	    = $CF7C0401
-    VL53L5CX_TPZ_SIGNAL_RATE_BH			    = $CFBC0404
-    VL53L5CX_TPZ_RANGE_SIGMA_MM_BH		    = $D2BC0402
-    VL53L5CX_TPZ_DISTANCE_BH			    = $D33C0402
-    VL53L5CX_TPZ_REFLECTANCE_BH			    = $D43C0401
-    VL53L5CX_TPZ_TARGET_STATUS_BH		    = $D47C0401
-    VL53L5CX_TPZ_MOTION_DETECT_BH		    = $CC5008C0
+    VL53L5CX_T1_START_BH			        = $0000000D
+    VL53L5CX_T1_METADATA_BH			    = $54B400C0
+    VL53L5CX_T1_COMMONDATA_BH			    = $54C00040
+    VL53L5CX_T1_AMBIENT_RATE_BH		    = $54D00104
+    VL53L5CX_T1_SPAD_COUNT_BH			    = $55D00404
+    VL53L5CX_T1_NB_TGT_DTEKT_BH	        = $CF7C0401
+    VL53L5CX_T1_SIGNAL_RATE_BH			    = $CFBC0404
+    VL53L5CX_T1_RNG_SIGMA_MM_BH		    = $D2BC0402
+    VL53L5CX_T1_DISTANCE_BH			    = $D33C0402
+    VL53L5CX_T1_RFLCTNC_BH			    = $D43C0401
+    VL53L5CX_T1_TGT_STATUS_BH		        = $D47C0401
+    VL53L5CX_T1_MOTN_DTEKT_BH		    = $CC5008C0
 
     ' 16-bit values
-    VL53L5CX_TPZ_METADATA_IDX			    = $54B4
-    VL53L5CX_TPZ_SPAD_COUNT_IDX			    = $55D0
-    VL53L5CX_TPZ_AMBIENT_RATE_IDX		    = $54D0
-    VL53L5CX_TPZ_NB_TARGET_DETECTED_IDX	    = $CF7C
-    VL53L5CX_TPZ_SIGNAL_RATE_IDX		    = $CFBC
-    VL53L5CX_TPZ_RANGE_SIGMA_MM_IDX		    = $D2BC
-    VL53L5CX_TPZ_DISTANCE_IDX			    = $D33C
-    VL53L5CX_TPZ_REFLECTANCE_EST_PC_IDX	    = $D43C
-    VL53L5CX_TPZ_TARGET_STATUS_IDX		    = $D47C
-    VL53L5CX_TPZ_MOTION_DETEC_IDX		    = $CC50
+    VL53L5CX_T1_METADATA_IDX			    = $54B4
+    VL53L5CX_T1_SPAD_COUNT_IDX			    = $55D0
+    VL53L5CX_T1_AMBIENT_RATE_IDX		    = $54D0
+    VL53L5CX_T1_NB_TGT_DTEKT_IDX	    = $CF7C
+    VL53L5CX_T1_SIGNAL_RATE_IDX		    = $CFBC
+    VL53L5CX_T1_RNG_SIGMA_MM_IDX		    = $D2BC
+    VL53L5CX_T1_DISTANCE_IDX			    = $D33C
+    VL53L5CX_T1_RFLCTNC_EST_PC_IDX	    = $D43C
+    VL53L5CX_T1_TGT_STATUS_IDX		        = $D47C
+    VL53L5CX_T1_MOTN_DETEC_IDX		    = $CC50
 
     ' (else) if Target Per Zone <> 1
     ' 32-bit values
@@ -125,26 +125,26 @@ CON { Interface constants }
     VL53L5CX_METADATA_BH			        = $54B400C0
     VL53L5CX_COMMONDATA_BH			        = $54C00040
     VL53L5CX_AMBIENT_RATE_BH		        = $54D00104
-    VL53L5CX_NB_TARGET_DETECTED_BH		    = $57D00401
+    VL53L5CX_NB_TGT_DTEKT_BH		        = $57D00401
     VL53L5CX_SPAD_COUNT_BH			        = $55D00404
     VL53L5CX_SIGNAL_RATE_BH			        = $58900404
-    VL53L5CX_RANGE_SIGMA_MM_BH		        = $64900402
+    VL53L5CX_RNG_SIGMA_MM_BH		        = $64900402
     VL53L5CX_DISTANCE_BH			        = $66900402
-    VL53L5CX_REFLECTANCE_BH			        = $6A900401
-    VL53L5CX_TARGET_STATUS_BH		        = $6B900401
-    VL53L5CX_MOTION_DETECT_BH		        = $CC5008C0
+    VL53L5CX_RFLCTNC_BH			        = $6A900401
+    VL53L5CX_TGT_STATUS_BH		            = $6B900401
+    VL53L5CX_MOTN_DTEKT_BH		        = $CC5008C0
 
     ' 16-bit values
     VL53L5CX_METADATA_IDX			        = $54B4
     VL53L5CX_SPAD_COUNT_IDX			        = $55D0
     VL53L5CX_AMBIENT_RATE_IDX		        = $54D0
-    VL53L5CX_NB_TARGET_DETECTED_IDX		    = $57D0
+    VL53L5CX_NB_TGT_DTEKT_IDX		    = $57D0
     VL53L5CX_SIGNAL_RATE_IDX		        = $5890
-    VL53L5CX_RANGE_SIGMA_MM_IDX		        = $6490
+    VL53L5CX_RNG_SIGMA_MM_IDX		        = $6490
     VL53L5CX_DISTANCE_IDX			        = $6690
-    VL53L5CX_REFLECTANCE_EST_PC_IDX		    = $6A90
-    VL53L5CX_TARGET_STATUS_IDX		        = $6B90
-    VL53L5CX_MOTION_DETEC_IDX		        = $CC50
+    VL53L5CX_RFLCTNC_EST_PC_IDX		    = $6A90
+    VL53L5CX_TGT_STATUS_IDX		            = $6B90
+    VL53L5CX_MOTN_DETEC_IDX		        = $CC50
 
 ' Inner Macro for API. Not for user, only for development.
 
@@ -159,9 +159,9 @@ CON { Interface constants }
     VL53L5CX_DCI_FW_NB_TARGET	            = $5478
     VL53L5CX_DCI_RANGING_MODE	            = $AD30
     VL53L5CX_DCI_DSS_CONFIG		            = $AD38
-    VL53L5CX_DCI_TARGET_ORDER	            = $AE64
+    VL53L5CX_DCI_TGT_ORDER	                = $AE64
     VL53L5CX_DCI_SHARPENER		            = $AED8
-    VL53L5CX_DCI_MOTION_DETECTOR_CFG        = $BFAC
+    VL53L5CX_DCI_MOTN_DETECTOR_CFG        = $BFAC
     VL53L5CX_DCI_SINGLE_RANGE	            = $CD5C
     VL53L5CX_DCI_OUTPUT_CONFIG	            = $CD60
     VL53L5CX_DCI_OUTPUT_ENABLES	            = $CD68
@@ -207,7 +207,7 @@ VAR { globals }
 CON { driver Settings }
 
     PULL_UP_VL53L5CX_I2C = i2c_bus.PU_NONE
-    FREQ_IN_KHZ_VL53L5CX_I2C = 100              ' use 400 KHz
+    FREQ_IN_KHZ_VL53L5CX_I2C = 1064              ' use 1 MHZ (1000 KHz) NOTE: at 270MHz clock: 1000 is 950KHz, 1010 is 965KHz, 1035 is 980KHz, 1050 same,
 
     MODE_READ               = %0000_0001
     MODE_WRITE              = %0000_0000
@@ -268,6 +268,12 @@ PUB stop()
         if bShowDebug
             debug(`snsLog '* Stopped' 10)
 '}
+PUB begin()
+'' yep, exrtacted from example code, ready our TOF Sensor
+    pinl(pin_rst)    ' de-assert
+    pinl(pin_lpn)    ' de-assert
+
+
 
 PRI setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : ok
     ' Configure pin numbers if not already
@@ -346,10 +352,10 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
     eDevice := DVC_NOT_FOUND
     if(!bFoundAddr0 and bFoundAddr1)
         eDevice := DVC_ADDR1
-        dvcI2CAddr := VL53L5CX_I2C_ADDR_1
+        dvcI2CAddr := VL53L5CX_I2C_ADDR_1 >> 1
     elseif(bFoundAddr0 and !bFoundAddr1)
         eDevice := DVC_ADDR0
-        dvcI2CAddr := VL53L5CX_I2C_ADDR_0
+        dvcI2CAddr := VL53L5CX_I2C_ADDR_0 >> 1
 {
     if (bFoundAddr0 or bFoundAddr1)
         if bShowDebug
@@ -380,7 +386,7 @@ DAT
 
   tempBuffer BYTE 0[TMP_SIZE_IN_BYTES]
 
-PUB getRangingMode(uint8_t *p_ranging_mode) : status, eRangingMode | bStatusOK
+PUB getRangingMode() : status, eRangingMode | bStatusOK
 
 	status := VL53L5CX_STATUS_OK
 
@@ -388,26 +394,26 @@ PUB getRangingMode(uint8_t *p_ranging_mode) : status, eRangingMode | bStatusOK
     bStatusOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
 
 	if (BYTE[@tempBuffer][1] == 1)
-		eRangingMode := VL53L5CX_RANGING_MODE_CONTINUOUS
+		eRangingMode := VL53L5CX_RANG_MODE_CONTINUOUS
 	else
-		eRangingMode := VL53L5CX_RANGING_MODE_AUTONOMOUS
+		eRangingMode := VL53L5CX_RANG_MODE_AUTONOMOUS
 
 
 PUB setRangingMode(ranging_mode) : status | single_range, bStatusOK
 
-	status := VL53L5CX_STATUS_OK
-	single_range := 0
+    status := VL53L5CX_STATUS_OK
+    single_range := 0
 
-	' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
+    ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
     bStatusOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
 
-	case ranging_mode
-	    VL53L5CX_RANGING_MODE_CONTINUOUS:
+    case ranging_mode
+        VL53L5CX_RANG_MODE_CONTINUOUS:
             BYTE[@tempBuffer][1] := 1
             BYTE[@tempBuffer][3] := 3
             single_range := 0
 
-	    VL53L5CX_RANGING_MODE_AUTONOMOUS:
+        VL53L5CX_RANG_MODE_AUTONOMOUS:
             BYTE[@tempBuffer][1] := 3
             BYTE[@tempBuffer][3] := 2
             single_range := 1
@@ -418,21 +424,11 @@ PUB setRangingMode(ranging_mode) : status | single_range, bStatusOK
     ' if request is valid, configure our device
     if status <> VL53L5CX_STATUS_INVALID_PARAM
         ' status |= vl53l5cx_dci_write_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, (uint16_t)8)
-        bStatusOK := writeBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+        bStatusOK := writeBytes(VL53L5CX_DCI_RANGING_MODE, @tempBuffer, 8)
         ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
         ' FIXME: single_range is now compiler byte order but what does device need? VERIFY THIS!!!
-        bStatusOK := writeBytes(VL53L5CX_DCI_SINGLE_RANGE, 4, @single_range)
+        bStatusOK := writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)
 
-
-PUB begin()
-'' yep, exrtacted from example code, ready our TOF Sensor
-    pinl(pin_rst)    ' de-assert
-    pinl(pin_lpn)    ' de-assert
-
-PUB end()
-'' yep, exrtacted from example code, stop our TOF Sensor
-    pinf(pin_rst)    ' make this an input
-    pinf(pin_lpn)    ' make this an input
 
 PUB initSensor()
     ' turn off: vl53l5cx_off()
@@ -446,8 +442,8 @@ PUB initSensor()
     ' return VL53L5CX_STATUS_OK
 CON
 
-    VL53L5CX_TPZ_FW_NBTAR_RANGING = 2
-    VL53L5CX_FW_NBTAR_RANGING = VL53L5CX_NB_TARGET_PER_ZONE
+    VL53L5CX_T1_FW_NBTAR_RANGING = 2
+    VL53L5CX_FW_NBTAR_RANGING = VL53L5CX_NB_TGT_PER_ZONE
 
 
 
@@ -456,16 +452,13 @@ PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusOK, bTempStat
 	' uint8_t tmp, status = VL53L5CX_STATUS_OK
     eDvcStatus := VL53L5CX_STATUS_OK
 
-	' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TARGET_PER_ZONE, 0x00, 0x01, 0x00}
-    pipe_ctrl.byte[0] := VL53L5CX_NB_TARGET_PER_ZONE
+	' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TGT_PER_ZONE, 0x00, 0x01, 0x00}
+    pipe_ctrl.byte[0] := VL53L5CX_NB_TGT_PER_ZONE
     pipe_ctrl.byte[1] := 0
     pipe_ctrl.byte[2] := 1
     pipe_ctrl.byte[3] := 0
 
 	single_range := 1
-
-	p_dev->default_xtalk = (uint8_t *)VL53L5CX_DEFAULT_XTALK
-	p_dev->default_configuration = (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION
 
 	' SW reboot sequence
 
@@ -532,72 +525,204 @@ PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusOK, bTempStat
 	bStatusOK |= writeByte($0020, 6)                                        ' status |= WrByte(&(p_dev->platform), $0020, 0x06)
 	' Download FW into VL53L5
     bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK0)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x09)
-	status |= writeBytes(0, $8000, @BYTE[@VL53L5CX_FIRMWARE][0])            ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) &VL53L5CX_FIRMWARE[0], 0x8000)
+	bStatusOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][0], $8000)         ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) &VL53L5CX_FIRMWARE[0], 0x8000)
 	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK1)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0a)
-	status |= writeBytes(0, $8000, @BYTE[@VL53L5CX_FIRMWARE][$8000])        ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x8000], 0x8000)
+	bStatusOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$8000], $8000)     ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x8000], 0x8000)
 	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK2)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0b)
-	status |= writeBytes(0, $5000, @BYTE[@VL53L5CX_FIRMWARE][$10000])       ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x10000], 0x5000)
+	bStatusOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$10000], $5000)    ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x10000], 0x5000)
 	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
 
 	' Check if FW correctly downloaded
 	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 	bStatusOK |= writeByte($03, $0D)                                        ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
-	opStatusOK := pollForAnswer(1, 0, $21, $10, $10)                        ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10) //0x10
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+	bStatusOK |= pollForAnswer(1, 0, $21, $10, $10)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10) //0x10
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
 	bStatusOK |= writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
 
 	' Reset MCU and wait boot
 	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	status |= WrByte(&(p_dev->platform), 0x114, 0x00)
-	status |= WrByte(&(p_dev->platform), 0x115, 0x00)
-	status |= WrByte(&(p_dev->platform), 0x116, 0x42)
-	status |= WrByte(&(p_dev->platform), 0x117, 0x00)
-	status |= WrByte(&(p_dev->platform), 0x0B, 0x00)
-	status |= WrByte(&(p_dev->platform), 0x0C, 0x00)
-	status |= WrByte(&(p_dev->platform), 0x0B, 0x01)
-	status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)                  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+	bStatusOK |= writeByte($114, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x114, 0x00)
+	bStatusOK |= writeByte($115, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x115, 0x00)
+	bStatusOK |= writeByte($116, 2)                                         ' status |= WrByte(&(p_dev->platform), 0x116, 0x42)
+	bStatusOK |= writeByte($117, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x117, 0x00)
+	bStatusOK |= writeByte($0B, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x00)
+	bStatusOK |= writeByte($0C, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x00)
+	bStatusOK |= writeByte($0B, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x01)
+	bStatusOK |= pollForAnswer(1, 0, $06, $ff, $00)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
+	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
 	' Get offset NVM data and store them into the offset buffer
 	'status |= WrMulti(&(p_dev->platform), 0x2fd8, (uint8_t *)VL53L5CX_GET_NVM_CMD, sizeof(VL53L5CX_GET_NVM_CMD))
-    status |= writeBytes(0x2fd8, VL53L5CX_GET_NVM_CMD_LEN, @VL53L5CX_GET_NVM_CMD)
+    bStatusOK |= writeBytes($2fd8, @VL53L5CX_GET_NVM_CMD, VL53L5CX_GET_NVM_CMD_LEN)
 
 	'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 0, VL53L5CX_UI_CMD_STATUS, 0xff, 2)
-    opStatusOK := pollForAnswer(4, 0, VL53L5CX_UI_CMD_STATUS, $FF, 2)
+    bStatusOK |= pollForAnswer(4, 0, VL53L5CX_UI_CMD_STATUS, $FF, 2)
 
 	' status |= RdMulti(&(p_dev->platform), VL53L5CX_UI_CMD_START, p_dev->temp_buffer, VL53L5CX_NVM_DATA_SIZE)
-    eDvcStatus |= readBytes(VL53L5CX_UI_CMD_START, VL53L5CX_NVM_DATA_SIZE, @tempBuffer)
+    bStatusOK |= readBytes(VL53L5CX_UI_CMD_START, VL53L5CX_NVM_DATA_SIZE, @tempBuffer)
 
 	' (void)memcpy(p_dev->offset_data, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
-    BYTEMOVE(p_dev->offset_data, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
-
-	status |= _vl53l5cx_send_offset_data(p_dev, VL53L5CX_RESOLUTION_4X4)
+    ' NOTE not copying before send... new method does its own copy
+	bStatusOK |= sendOffsetData(VL53L5CX_RESOLUTION_4X4, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
 	' Set default Xtalk shape. Send Xtalk to sensor
 	' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
-    BYTEMOVE(p_dev->xtalk_data, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
-
-
-	status |= _vl53l5cx_send_xtalk_data(p_dev, VL53L5CX_RESOLUTION_4X4)
+    ' NOTE not copying before send... new method does its own copy
+	bStatusOK |= sendXtalkData(VL53L5CX_RESOLUTION_4X4, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
 
 	' Send default configuration to VL53L5CX firmware
 	' status |= WrMulti(&(p_dev->platform), 0x2c34, (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION, sizeof(VL53L5CX_DEFAULT_CONFIGURATION))
-    status |= writeBytes(0x2c34, VL53L5CX_DEFAULT_CONFIG_LEN, @VL53L5CX_DEFAULT_CONFIGURATION)
+    bStatusOK |= writeBytes($2c34, @VL53L5CX_DEFAULT_CONFIGURATION, VL53L5CX_DEFAULT_CONFIG_LEN)
 
 	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    opStatusOK := pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+    bStatusOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
 
-	status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
+	' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
+    bStatusOK |= writeBytes(VL53L5CX_DCI_PIPE_CONTROL, @pipe_ctrl, 4)
 
-    if VL53L5CX_NB_TARGET_PER_ZONE <> 1
-        tmp = VL53L5CX_NB_TARGET_PER_ZONE
-        status |= vl53l5cx_dci_replace_data(p_dev, p_dev->temp_buffer,
-                                            VL53L5CX_DCI_FW_NB_TARGET, 16,
-                                            (uint8_t *)&tmp, 1, 0x0C)
+    if VL53L5CX_NB_TGT_PER_ZONE <> 1
+        tmp := VL53L5CX_NB_TGT_PER_ZONE
+        bStatusOK |= dciReplaceData(@tempBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp.byte[0], 1, $0C)
 
 	' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-    status |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, 4, @single_range)   ' write 32-bit value
+    bStatusOK |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)   ' write 32-bit value
+
+PRI dciReplaceData(pDataBffr, register16, dataBffrSize, pNewData, newDataSize, newDataOfst) : status
+' REF uint8_t vl53l5cx_dci_replace_data(p_dev, *data, index, data_size, *new_data, new_data_size, new_data_pos)
+	status := VL53L5CX_STATUS_OK
+
+    status |= readBytes(register16, dataBffrSize, pDataBffr)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
+
+    BYTEMOVE(@BYTE[pDataBffr][newDataOfst], pNewData, newDataSize)  ' (void)memcpy(&(data[new_data_pos]), new_data, new_data_size)
+
+	status |= writeBytes(register16, pDataBffr, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
+
+CON
+
+    OVERALL_BUFFER_SIZE_BYTES = (VL53L5CX_XTALK_BUFFER_SIZE > VL53L5CX_OFFSET_BUFFER_SIZE) ? VL53L5CX_XTALK_BUFFER_SIZE : VL53L5CX_OFFSET_BUFFER_SIZE
+    SIGNAL_GRID_SIZE_BYTES = 64
+    RANGE_GRID_SIZE_BYTES = 64
+
+DAT
+	signal_grid     LONG    0[SIGNAL_GRID_SIZE_BYTES]
+	range_grid      WORD    0[RANGE_GRID_SIZE_BYTES]
+
+	dss_4x4Ofs      BYTE    $0F, $04, $04, $00, $08, $10, $10, $07
+	footer          BYTE    $00, $00, $00, $0F, $03, $01, $01, $E4
+
+	res4x4          BYTE    $0F, $04, $04, $17, $08, $10, $10, $07
+	dss_4x4         BYTE    $00, $78, $00, $08, $00, $00, $00, $08
+	profile_4x4     BYTE    $A0, $FC, $01, $00
+
+    ' FIXME: convert following to single buffer if conditional constant assignment above compiles
+    xtalkTempBuffer BYTE    0[VL53L5CX_XTALK_BUFFER_SIZE]   ' 776 bytes
+    ofsTempBuffer   BYTE    0[VL53L5CX_OFFSET_BUFFER_SIZE]    ' 488 bytes
+
+
+PRI sendOffsetData(resolution, pSourceBytes, nLenSourceBytes) : status | j, i, k
+' Inner function, not available outside this file. This function is used
+'  to set the offset data gathered from NVM.
+	status := VL53L5CX_STATUS_OK
+
+	BYTEMOVE(@ofsTempBuffer, pSourceBytes, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
+
+	' Data extrapolation is required for 4X4 offset
+	if resolution == VL53L5CX_RESOLUTION_4X4
+		BYTEMOVE(@BYTE[@ofsTempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
+        ' convert tempBuffer into device byte-order
+		SwapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+
+        ' extract signal grid
+		BYTEMOVE(@signal_grid, @BYTE[@ofsTempBuffer][$3c], SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
+        ' extract range grid
+		BYTEMOVE(@range_grid, @BYTE[@ofsTempBuffer][$140], RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(range_grid, &(p_dev->temp_buffer[0x140]), sizeof(range_grid))
+
+		repeat j from 0 to 4 - 1                                                    ' for (j = 0 j < (int8_t)4 j++)
+			repeat i from 0 to 4 - 1                                                ' for (i = 0 i < (int8_t)4 i++)
+				BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
+				BYTE[@range_grid][i + (4 * j)] := (BYTE[@range_grid][(2 * i) + (16 * j)] + BYTE[@range_grid][(2 * i) + (16 * j) + 1] + BYTE[@range_grid][(2 * i) + (16 * j) + 8] + BYTE[@range_grid][(2 * i) + (16 * j) + 9]) / 4
+
+        ' clear some spaces within range grid
+		BYTEFILL(@BYTE[@range_grid][$10], 0, 96)                                    ' (void)memset(&range_grid[0x10], 0, (uint16_t)96)
+        ' clear some spaces within signal grid
+		BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
+
+        ' replace signal grid
+		BYTEMOVE(@BYTE[@ofsTempBuffer][$3c], @signal_grid, SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
+        ' replace range grid
+		BYTEMOVE(@BYTE[@ofsTempBuffer][$140], @range_grid, RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
+
+        ' convert tempBuffer into device byte-order
+		SwapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+
+    ' shift buffer up 8 bytes ?! (removing first 8 bytes, leaving copy of last 8 bytes!)
+    '  FIXME: this seems broken as we are moving up 8 but our length is (max - 4) ?? this should be max - 8, right?
+	repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                        ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
+		BYTE[@ofsTempBuffer][k] := BYTE[@ofsTempBuffer][k + 8]                      ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
+
+	BYTEMOVE(@BYTE[@ofsTempBuffer][$1e0], @footer, 8)                               ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
+
+	' status |= WrMulti(&(p_dev->platform), 0x2e18, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    status |= writeBytes($2e18, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+
+	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    status |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
+
+
+PRI sendXtalkData(resolution, pSourceBytes, nLenSourceBytes) : status | j, i
+' Inner function, not available outside this file. This function is used
+'   to set the Xtalk data from generic configuration, or user's calibration.
+	status := VL53L5CX_STATUS_OK
+
+    ' copy external buffer to tempBuffer
+	BYTEMOVE(@xtalkTempBuffer, pSourceBytes, VL53L5CX_XTALK_BUFFER_SIZE)        ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
+
+	' Data extrapolation is required for 4X4 Xtalk
+	if (resolution == VL53L5CX_RESOLUTION_4X4)
+        ' overlay new values into tempBuffer
+		BYTEMOVE(@BYTE[@xtalkTempBuffer][$08], @res4x4, 8)                      ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4, sizeof(res4x4))
+		BYTEMOVE(@BYTE[@xtalkTempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
+
+        ' convert tempBuffer into device byte-order
+		SwapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        ' extract copy of ordered signal grid
+		BYTEMOVE(@signal_grid, @BYTE[@xtalkTempBuffer][$34], 64)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
+
+        ' recalculate values within signal grid
+		repeat j from 0 to 4 - 1                                                ' for (j = 0 j < (int8_t)4 j++)
+			repeat i from 0 to 4 - 1                                            ' for (i = 0 i < (int8_t)4 i++)
+				BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
+
+        ' clear some spaces within signal grid
+		BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                              ' (void)memset(&signal_grid[0x10], 0, (uint32_t)192)
+
+        ' copy updated signal grid back into temp buffer
+		BYTEMOVE(@BYTE[@xtalkTempBuffer][$34], @signal_grid, 64)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
+
+        ' convert tempBuffer into device byte-order - FIXME: HUH? why doing this again?  Shouldn't only place be here?!!
+		SwapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+
+        ' copy profile_4x4 into temp buffer
+		BYTEMOVE(@BYTE[@xtalkTempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
+
+        ' clear 4 bytes within temp buffer
+		BYTEFILL(@BYTE[@xtalkTempBuffer][$078], 0, 4)                           ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
+
+    ' write temp buffer out to device
+	' status |= WrMulti(&(p_dev->platform), 0x2cf8, p_dev->temp_buffer, VL53L5CX_XTALK_BUFFER_SIZE)
+    status |= writeBytes($2cf8, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    status |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
+
+
+PRI SwapBuffer(pByteArray, nbrBytes) | tmp, i
+' Inner function, not available outside this file. This function is used
+'  to convert to device required byte order
+	repeat i from 0 to nbrBytes - 1 step 4                                      ' for (i = 0 i < size i = i + 4)
+		tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
+        LONGFILL(@BYTE[pByteArray][i], tmp, 1)                                  ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
+
 
 
 PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusOK
@@ -648,7 +773,7 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : status | timeou
         'status |= RdMulti(&(p_dev->platform), addr16, p_dev->temp_buffer, size8)
         bStatusOK := readBytes(addr16, size8, @tempBuffer)
         ' status |= WaitMs(&(p_dev->platform), 10)
-        waitus
+        waitus(10)
 
         if (timeout >= 200) '  2s timeout
             ' status |= p_dev->temp_buffer[2]
@@ -659,7 +784,7 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : status | timeou
         else
             timeout++
 
-    while ((BYTE[@tempBuffer][posn8] & mask8) != expectedValue8)
+    while ((BYTE[@tempBuffer][posn8] & mask8) <> expectedValue8)
 
 
 CON  { ---- Device reads & writes ---- }
@@ -680,7 +805,7 @@ PUB writeByte(regAddr16, dataValue8) : ok | ackbit
     ' following is more than 10ms...
     '    term.fstr3(string("* writeByte(0x%.02x)=0x%.02x ok:%d' 10), regAddr16, dataValue8, ok)
 
-PUB writeBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAckNak, result8
+PUB writeBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAckNak, result8
     '' Write {byteCount} BYTEs from BYTE array located at {pByteStore} -  to {regAddr16}+0, to {regAddr16}+1,
     ''  to {regAddr16}+2 and so on
     i2c_bus.start()
