@@ -111,7 +111,7 @@ PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupV
     tofSensor.initSensor()
 
     ' Start Measurements
-    'tofSensor.startRanging()
+    tofSensor.startRanging()
 
     repeat  ' halt here for now
 
