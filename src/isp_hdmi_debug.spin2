@@ -149,16 +149,16 @@ PUB registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars
                 maxGrpSize := LONG[@dsplyList][dsplyLstOffset + IDX_MAX_GRP_VARS]
                 nbrGroups := LONG[@dsplyList][dsplyLstOffset + IDX_NGROUPS]
                 'debug("INTRP: #grps: ", udec_long(nbrGroups))
-                ' pStr = LONG[pGroupTitles][grpIdx]
+                ' pStr := LONG[pGroupTitles][grpIdx]
                 pTitlesAr := LONG[@dsplyList][dsplyLstOffset + IDX_GRP_TITLES]
                 'debug("HDMI pTitlesAr: #", uhex_long_(pTitlesAr), uhex_long_array(pTitlesAr, nbrGroups + 1))
-                ' nNbrGrpVars = LONG[pVarCtAr][grpIdx]
+                ' nNbrGrpVars := LONG[pVarCtAr][grpIdx]
                 pVarCtsAr := LONG[@dsplyList][dsplyLstOffset + IDX_GRP_VAR_CTS]
                 'debug("HDMI pVarCtsAr: #", uhex_long_(pVarCtsAr), uhex_long_array(pVarCtsAr, nbrGroups))
-                ' pGrpNameAr = LONG[pNamesAr][grpIdx], pVarName = LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+                ' pGrpNameAr := LONG[pNamesAr][grpIdx], pVarName := LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
                 pGrpNamesAr := LONG[@dsplyList][dsplyLstOffset + IDX_GRP_NAMES]
                 'debug("HDMI pGrpNamesAr: #", uhex_long_(pGrpNamesAr), uhex_long_array(pGrpNamesAr, nbrGroups * maxGrpSize))
-                ' pGrpLongVar = LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+                ' pGrpLongVar := LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
                 pGrpValuesAr := LONG[@dsplyList][dsplyLstOffset + IDX_GRP_VAR_PTRS]
                 'debug("HDMI pGrpValuesAr: #", uhex_long_(pGrpValuesAr), uhex_long_array(pGrpValuesAr, nbrGroups * maxGrpSize))
                 repeat grpIdx from 0 to nbrGroups - 1
@@ -285,22 +285,22 @@ PRI taskShowDebug(pDriverCmd, pDriverArg, pDsplyList)
             ' ------------------------
             repeat dsplyListIdx from 0 to currDLEntryIdx - 1
                 ' nGroups := DBG_GROUPS_CT
-                ' pGroupTitles := @@pTitlesAr         ' pStr = LONG[pTitlesAr][grpIdx]
-                ' pGroupVarCts := @@pVarCtAr          ' nNbrGrpVars = LONG[pVarCtAr][grpIdx]
-                ' pGroupNames := @@pNamesAr           ' pGrpNameAr = LONG[pNamesAr][grpIdx], pVarName = LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
-                ' pGroupVars := @@pValsAr             ' pGrpLongVar = LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+                ' pGroupTitles := @@pTitlesAr         ' pStr := LONG[pTitlesAr][grpIdx]
+                ' pGroupVarCts := @@pVarCtAr          ' nNbrGrpVars := LONG[pVarCtAr][grpIdx]
+                ' pGroupNames := @@pNamesAr           ' pGrpNameAr := LONG[pNamesAr][grpIdx], pVarName := LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+                ' pGroupVars := @@pValsAr             ' pGrpLongVar := LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
 
                 ' get arrays, then index to display info for each group
                 dsplyLstOffset := dsplyListIdx * NBR_LONGS_PER_DL_ENTRY
                 maxGrpSize := LONG[@dsplyList][dsplyLstOffset + IDX_MAX_GRP_VARS]
                 nbrGroups := LONG[pDsplyList][dsplyLstOffset + IDX_NGROUPS]
-                ' pStr = LONG[pGroupTitles][grpIdx]
+                ' pStr := LONG[pGroupTitles][grpIdx]
                 pTitlesAr := LONG[pDsplyList][dsplyLstOffset + IDX_GRP_TITLES]
-                ' nNbrGrpVars = LONG[pVarCtAr][grpIdx]
+                ' nNbrGrpVars := LONG[pVarCtAr][grpIdx]
                 pVarCtsAr := LONG[pDsplyList][dsplyLstOffset + IDX_GRP_VAR_CTS]
-                ' pGrpNameAr = LONG[pNamesAr][grpIdx], pVarName = LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+                ' pGrpNameAr := LONG[pNamesAr][grpIdx], pVarName := LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
                 pGrpNamesAr := LONG[pDsplyList][dsplyLstOffset + IDX_GRP_NAMES]
-                ' pGrpLongVar = LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+                ' pGrpLongVar := LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
                 pGrpValuesAr := LONG[pDsplyList][dsplyLstOffset + IDX_GRP_VAR_PTRS]
 
                 repeat grpIdx from 0 to nbrGroups - 1

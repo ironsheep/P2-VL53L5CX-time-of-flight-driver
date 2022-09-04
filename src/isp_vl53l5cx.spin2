@@ -105,7 +105,8 @@ con { fixed io pins }
 
 OBJ { Objects this object needs }
 
-    i2c_bus     : "jm_i2c"                                  ' i2c coms
+    'i2c_bus     : "isp_vli2c"                                  ' i2c coms
+    i2c_bus     : "jm_i2c_dec"                                 ' i2c coms
 
 VAR { Instance Variables - Global }
 
@@ -126,7 +127,8 @@ VAR { Instance Variables - Global }
 CON { driver Settings }
 
     PULL_UP_VL53L5CX_I2C = i2c_bus.PU_NONE
-    FREQ_IN_KHZ_VL53L5CX_I2C = 1064              ' use 1 MHZ (1000 KHz) NOTE: at 270MHz clock: 1000 is 950KHz, 1010 is 965KHz, 1035 is 980KHz, 1050 same,
+    'FREQ_IN_KHZ_VL53L5CX_I2C = 1064              ' use 1 MHZ (1000 KHz) NOTE: at 270MHz clock: 1000 is 950KHz, 1010 is 965KHz, 1035 is 980KHz, 1050 same,
+    FREQ_IN_KHZ_VL53L5CX_I2C = 1000              ' use 1 MHZ (1000 KHz) NOTE: at 270MHz clock: 1000 is 950KHz, 1010 is 965KHz, 1035 is 980KHz, 1050 same,
 
     VL53L5CX_I2C_ADDR_0      = $52
     VL53L5CX_I2C_ADDR_1      = $54
@@ -150,7 +152,7 @@ PUB init(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)
     if bPinsSetUp
         floatPins()
         ' have the driver force its own pins quiet
-        i2c_bus.quiesce(pin_scl, pin_sda, PULL_UP_VL53L5CX_I2C)
+        'i2c_bus.quiesce(pin_scl, pin_sda, PULL_UP_VL53L5CX_I2C)
 
 PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent
     '' Start the device running
@@ -179,31 +181,50 @@ PUB stop()
         if bShowDebug
             debug(`snsLog '* Stopped' 10)
 '}
-PUB begin()
+PUB begin() : bIsAlive | eDvcStatus
 '' yep, exrtacted from example code, ready our TOF Sensor
-    pinl(pin_rst)    ' de-assert
-    pinl(pin_lpn)    ' de-assert
+    'pinl(pin_rst)    ' de-assert
+    'pinl(pin_lpn)    ' de-assert
 
-PUB getRangingMode() : status, eRangingMode | bStatusOK
+    ' now let's do real code...
+    eDvcStatus, bIsAlive := isAlive()
 
-	status := VL53L5CX_STATUS_OK
+    if eDvcStatus == VL53L5CX_STATUS_OK and bIsAlive
+        ' turn off: vl53l5cx_off()
+        ' turn on: vl53l5cx_on()
+        initDriver()    ' extended so we can do run-time config of driver
 
-	' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
-    bStatusOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+        ' init device: vl53l5cx_init()
+        '   return VL53L5CX_STATUS_ERROR if failed to init
+        ' return VL53L5CX_STATUS_OK
+        eDvcStatus := vl53l5cx_init()
+        if eDvcStatus <> VL53L5CX_STATUS_OK
+            bIsAlive := FALSE
 
-	if (BYTE[@tempBuffer][1] == 1)
-		eRangingMode := VL53L5CX_RANG_MODE_CONTINUOUS
-	else
-		eRangingMode := VL53L5CX_RANG_MODE_AUTONOMOUS
+
+PUB getRangingMode() : eDvcStatus, eRangingMode | bStatusNotOK
+
+    eDvcStatus := VL53L5CX_STATUS_OK
+
+    ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
+    bStatusNotOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+
+    if (BYTE[@tempBuffer][1] == 1)
+        eRangingMode := VL53L5CX_RANG_MODE_CONTINUOUS
+    else
+        eRangingMode := VL53L5CX_RANG_MODE_AUTONOMOUS
+
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
 
-PUB setRangingMode(ranging_mode) : status | single_range, bStatusOK
+PUB setRangingMode(ranging_mode) : eDvcStatus | single_range, bStatusNotOK
 
-    status := VL53L5CX_STATUS_OK
+    eDvcStatus := VL53L5CX_STATUS_OK
     single_range := 0
 
     ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
-    bStatusOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
+    bStatusNotOK := readBytes(VL53L5CX_DCI_RANGING_MODE, 8, @tempBuffer)
 
     case ranging_mode
         VL53L5CX_RANG_MODE_CONTINUOUS:
@@ -217,26 +238,32 @@ PUB setRangingMode(ranging_mode) : status | single_range, bStatusOK
             single_range := 1
 
         other:
-            status := VL53L5CX_STATUS_INVALID_PARAM
+            eDvcStatus := VL53L5CX_STATUS_INVALID_PARAM
 
     ' if request is valid, configure our device
-    if status <> VL53L5CX_STATUS_INVALID_PARAM
+    if eDvcStatus <> VL53L5CX_STATUS_INVALID_PARAM
         ' status |= vl53l5cx_dci_write_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, (uint16_t)8)
-        bStatusOK := writeBytes(VL53L5CX_DCI_RANGING_MODE, @tempBuffer, 8)
+        bStatusNotOK |= writeBytes(VL53L5CX_DCI_RANGING_MODE, @tempBuffer, 8)
         ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-        ' FIXME: single_range is now compiler byte order but what does device need? VERIFY THIS!!!
-        bStatusOK := writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)
+        single_range := valueToDevice(single_range)
+        bStatusNotOK |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)
 
-PUB getResolution() : status, nResolution8
-	status = VL53L5CX_STATUS_OK
+        if bStatusNotOK
+            eDvcStatus := VL53L5CX_STATUS_ERROR
 
-	' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_ZONE_CONFIG, 8)
-    status |= readBytes(VL53L5CX_DCI_ZONE_CONFIG, 8, @tempBuffer)
+PUB getResolution() : eDvcStatus, nResolution8 | bStatusNotOK
+    eDvcStatus := VL53L5CX_STATUS_OK
 
-	nResolution8 := BYTE[@tempBuffer][0] * BYTE[@tempBuffer][1] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
+    ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_ZONE_CONFIG, 8)
+    bStatusNotOK := readBytes(VL53L5CX_DCI_ZONE_CONFIG, 8, @tempBuffer)
 
-PUB startRanging() : status | nResolution8b, i, bhType, bhIdx, bhSize, logicalValue32b
-    status := VL53L5CX_STATUS_OK
+    nResolution8 := BYTE[@tempBuffer][0] * BYTE[@tempBuffer][1] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
+
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+
+PUB startRanging() : eDvcStatus | nResolution8b, i, bhType, bhIdx, bhSize, logicalValue32b, bStatusNotOK
+    eDvcStatus := VL53L5CX_STATUS_OK
 
     ' load output[] buffer data
     LONG[@output][0] := startBh
@@ -252,14 +279,14 @@ PUB startRanging() : status | nResolution8b, i, bhType, bhIdx, bhSize, logicalVa
     LONG[@output][10] := targetStatusBh
     LONG[@output][11] := motionDetectBh
 
-    status, nResolution8b := getResolution()   ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
-	dataReadSize := 0
-	streamcount := 255   ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
+    eDvcStatus, nResolution8b := getResolution()   ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
+    dataReadSize := 0
+    streamcount := 255   ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
 
-	' Enable/Disable selected outputs in the DAT { start ranging data } section
+    ' Enable/Disable selected outputs in the DAT { start ranging data } section
     '  (set bit for each section enabled)
     if ambientPerSpad
-	    LONG[@output_bh_enable][0] += 8
+        LONG[@output_bh_enable][0] += 8
 
     if nbSpadsEnabled
         LONG[@output_bh_enable][0] += 16
@@ -287,22 +314,22 @@ PUB startRanging() : status | nResolution8b, i, bhType, bhIdx, bhSize, logicalVa
 
     ' NOTE: union interp:
     '   union Block_header {
-    '   	uint32_t bytes;             ' bytes is the full long
+    '   	uint32_t bytes             ' bytes is the full long
     '   	struct {
-    '   		uint32_t type : 4;      ' type is bits 31-28
-    '   		uint32_t size : 12;     ' size is bits 27-16
-    '   		uint32_t idx : 16;      ' type is bits 15-0
-    '   	};
-    '   };
+    '   		uint32_t type : 4      ' type is bits 31-28
+    '   		uint32_t size : 12     ' size is bits 27-16
+    '   		uint32_t idx : 16      ' type is bits 15-0
+    '   	}
+    '   }
 
-	' Update data size
-	'for (i := 0 i < (uint32_t)(sizeof(output) / sizeof(uint32_t)) i++)
+    ' Update data size
+    'for (i := 0 i < (uint32_t)(sizeof(output) / sizeof(uint32_t)) i++)
     repeat i from 0 to (output_len / 4) - 1     ' output_len is 48 (12 longs, 4 bytes ea.)
-		if ((output[i] == 0) || ((output_bh_enable[i / 32] & (1 << (i // 32))) == 0))
-			next
+        if ((output[i] == 0) || ((output_bh_enable[i / 32] & (1 << (i // 32))) == 0))
+            next
 
         ' for each of the 12 longs that is (not zero, or block-bit is set) do
-		' bh_ptr := (union Block_header *)&(output[i])    ' output[] is 12 longs
+        ' bh_ptr := (union Block_header *)&(output[i])    ' output[] is 12 longs
         '
         ' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
         '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
@@ -315,78 +342,122 @@ PUB startRanging() : status | nResolution8b, i, bhType, bhIdx, bhSize, logicalVa
         bhIdx := (logicalValue32b & $0000_ff00 >> 8) | (logicalValue32b & $0000_000f) << 8      ' build $0000_0856
         ' - physical store: $0000_3412, logical store $1234_0000
         bhSize := (logicalValue32b & $ff00_0000) >> 24 | (logicalValue32b & $00ff_0000) >> 8    ' build $0000_3412
-		if ((bhType >= $01) and (bhType < $0d))
-			if ((bhIdx >= $54d0) and (bhIdx < ($54d0 + 960)))
-				bhSize := nResolution8b
-			else
-				bhSize := (nResolution8b * VL53L5CX_NB_TGT_PER_ZONE)
+        if (bhType >= $01) and (bhType < $0d)
+            if (bhIdx >= $54d0) and (bhIdx < ($54d0 + 960))
+                bhSize := nResolution8b
+            else
+                bhSize := (nResolution8b * VL53L5CX_NB_TGT_PER_ZONE)
             LONG[@output][i] &= !$0000_ff0f                 ' clear size field
             LONG[@output][i] |= ((bhSize & $0000_0f00) >> 8) | ((bhSize & $0000_00ff) << 8)     ' place new size value in field
-			dataReadSize += bhType * bhSize
-		else
-			dataReadSize += bhSize
-		dataReadSize += 4
-	dataReadSize += 20
+            dataReadSize += bhType * bhSize
+        else
+            dataReadSize += bhSize
+        dataReadSize += 4
+    dataReadSize += 20
 
     ' code translation cross-check
     if dataReadSize > 255
         debug("startRanging() ERROR dataReadSize wont fit into byte!!")
 
-	'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output), VL53L5CX_DCI_OUTPUT_LIST, (uint16_t)sizeof(output))
-    status |= writeBytes(VL53L5CX_DCI_OUTPUT_LIST, @output, output_len)
+    'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output), VL53L5CX_DCI_OUTPUT_LIST, (uint16_t)sizeof(output))
+    bStatusNotOK := writeBytes(VL53L5CX_DCI_OUTPUT_LIST, @output, output_len)
 
-	BYTE[@header_config][0] := dataReadSize
-	BYTE[@header_config][1] := i + 1
+    BYTE[@header_config][0] := dataReadSize
+    BYTE[@header_config][1] := i + 1
 
-	'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(header_config), VL53L5CX_DCI_OUTPUT_CONFIG, (uint16_t)sizeof(header_config))
-    status |= writeBytes(VL53L5CX_DCI_OUTPUT_CONFIG, @header_config, header_config_len)
+    'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(header_config), VL53L5CX_DCI_OUTPUT_CONFIG, (uint16_t)sizeof(header_config))
+    bStatusNotOK |= writeBytes(VL53L5CX_DCI_OUTPUT_CONFIG, @header_config, header_config_len)
 
-	'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output_bh_enable), VL53L5CX_DCI_OUTPUT_ENABLES, (uint16_t)sizeof(output_bh_enable))
-    status |= writeBytes(VL53L5CX_DCI_OUTPUT_ENABLES, @output_bh_enable, output_bh_en_len)
+    'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output_bh_enable), VL53L5CX_DCI_OUTPUT_ENABLES, (uint16_t)sizeof(output_bh_enable))
+    bStatusNotOK |= writeBytes(VL53L5CX_DCI_OUTPUT_ENABLES, @output_bh_enable, output_bh_en_len)
 
-	' Start xshut bypass (interrupt mode)
-	status |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	status |= writeByte($09, $05)                                           ' status |= WrByte(&(p_dev->platform), 0x09, 0x05)
-	status |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)         ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    ' Start xshut bypass (interrupt mode)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($09, $05)                                           ' status |= WrByte(&(p_dev->platform), 0x09, 0x05)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)         ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
-	' Start ranging session
-	'status |= WrMulti(&(p_dev->platform), VL53L5CX_UI_CMD_END - (uint16_t)(4 - 1), (uint8_t *)cmd, sizeof(cmd))
-    status |= writeBytes(VL53L5CX_UI_CMD_END - (4 - 1), @cmd, cmd_len)
-	'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    status |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+    ' Start ranging session
+    'status |= WrMulti(&(p_dev->platform), VL53L5CX_UI_CMD_END - (uint16_t)(4 - 1), (uint8_t *)cmd, sizeof(cmd))
+    bStatusNotOK |= writeBytes(VL53L5CX_UI_CMD_END - (4 - 1), @cmd, cmd_len)
+    'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
 
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusOK
+PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK, bStatusNotOK
+
+    tmp := 0
+    eDvcStatus := VL53L5CX_STATUS_OK
+    timeout := 0
+
+    ' status |= RdMulti(&(p_dev->platform), 0x2FFC, (uint8_t *)&auto_stop_flag, 4)
+    bStatusNotOK := readBytes($2FFC, 4, @auto_stop_flag)
+    debug("CHP: ", uhex_long(auto_stop_flag), uhex_byte_array(@auto_stop_flag, 4))
+
+    if (valueFmDevice(auto_stop_flag) <> $4FF)
+        bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)          ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+
+        ' Provoke MCU stop
+        bStatusNotOK |= writeByte($15, $16)                                           ' status |= WrByte(&(p_dev->platform), 0x15, 0x16)
+        bStatusNotOK |= writeByte($14, $01)                                           ' status |= WrByte(&(p_dev->platform), 0x14, 0x01)
+
+        ' Poll for G02 status 0 MCU stop
+        repeat
+            bTempStatusNotOK, tmp := readByte($6)                    ' status |= RdByte(&(p_dev->platform), 0x6, &tmp)
+            bStatusNotOK |= bTempStatusNotOK
+            WaitMs(10)
+            timeout++
+            ' Timeout reached after 5 seconds
+            if timeout > 500
+                eDvcStatus := VL53L5CX_STATUS_ERROR
+                quit
+        while (((tmp & $80) >> 7) == $00)
+
+    ' Undo MCU stop
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($14, $00)                                           ' status |= WrByte(&(p_dev->platform), 0x14, 0x00)
+    bStatusNotOK |= writeByte($15, $00)                                           ' status |= WrByte(&(p_dev->platform), 0x15, 0x00)
+
+    ' Stop xshut bypass
+    bStatusNotOK |= writeByte($09, $04)                                           ' status |= WrByte(&(p_dev->platform), 0x09, 0x04)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)         ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+
+PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
 
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)          ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-    bStatusOK |= writeByte(VL53L5CX_REG_DVC_ADDR, i2cAddress >> 1)                 ' |= WrByte(&(p_dev->platform), 0x4, (uint8_t)(i2c_address >> 1))
-                                                                                ' p_dev->platform.address = i2c_address
-    bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)             ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
-    if not bStatusOK
+    bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)    ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_DVC_ADDR, i2cAddress >> 1)           ' |= WrByte(&(p_dev->platform), 0x4, (uint8_t)(i2c_address >> 1))
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)       ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
-
-    dvcI2CAddr := i2cAddress
-
-PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusOK, bTempStatusOK
-
-    eDvcStatus := VL53L5CX_STATUS_OK
-
-    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)               ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-    bTempStatusOK, device_id := readByte(VL53L5CX_REG_DVC_ID)                           ' |= RdByte(&(p_dev->platform), 0, &device_id)
-    bStatusOK |= bTempStatusOK
-    bTempStatusOK, revision_id := readByte(VL53L5CX_REG_REV_ID)                         ' |= RdByte(&(p_dev->platform), 1, &revision_id)
-    bStatusOK |= bTempStatusOK
-    bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)                  ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
-    if not bStatusOK
-        eDvcStatus := VL53L5CX_STATUS_ERROR
-
-    if ((device_id == $F0) and (revision_id == $02))
-        bIsAlive := TRUE
-        debug("TOF: is alive!")
     else
-        bIsAlive := FALSE
+        dvcI2CAddr := i2cAddress
+
+PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTempStatusNotOK
+
+    eDvcStatus := VL53L5CX_STATUS_OK
+    bIsAlive := FALSE
+
+    bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)               ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bTempStatusNotOK, device_id := readByte(VL53L5CX_REG_DVC_ID)                           ' |= RdByte(&(p_dev->platform), 0, &device_id)
+    bStatusNotOK |= bTempStatusNotOK
+    bTempStatusNotOK, revision_id := readByte(VL53L5CX_REG_REV_ID)                         ' |= RdByte(&(p_dev->platform), 1, &revision_id)
+    bStatusNotOK |= bTempStatusNotOK
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)                  ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+        debug("TOF: chip detect failure!")
+    else
+        if ((device_id == $F0) and (revision_id == $02))
+            bIsAlive := TRUE
+            debug("TOF: is alive!")
+        else
+            debug("TOF: chip detect: BAD ID from chip!")
 
 PUB getIntPinState() : bPinState | rawPin
     '' Return interpreted value of Interrupt pin where 1 = TRUE, 0 = FALSE
@@ -394,17 +465,6 @@ PUB getIntPinState() : bPinState | rawPin
     bPinState := (rawPin == 0) ? false : true
     'if bShowDebug
         'debug(`snsLog ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
-
-PUB initSensor()
-    ' turn off: vl53l5cx_off()
-    ' turn on: vl53l5cx_on()
-    ' set desired I2C address: vl53l5cx_set_i2c_address(addr)
-    '   return VL53L5CX_STATUS_ERROR if failed to set
-    ' see if alive: vl53l5cx_is_alive(&isAlive)
-    '   return VL53L5CX_STATUS_ERROR if not
-    ' init device: vl53l5cx_init()
-    '   return VL53L5CX_STATUS_ERROR if failed to init
-    ' return VL53L5CX_STATUS_OK
 
 CON '  ---- PRIVATE (Utility) Methods ----
 
@@ -498,148 +558,183 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
             debug("* idDevice() NOT found")
 '}
 
-PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusOK, bTempStatusOK, tmp
+PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempStatusNotOK, tmp
 
-	' uint8_t tmp, status = VL53L5CX_STATUS_OK
     eDvcStatus := VL53L5CX_STATUS_OK
 
-	' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TGT_PER_ZONE, 0x00, 0x01, 0x00}
+    ' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TGT_PER_ZONE, 0x00, 0x01, 0x00}
     pipe_ctrl.byte[0] := VL53L5CX_NB_TGT_PER_ZONE
     pipe_ctrl.byte[1] := 0
     pipe_ctrl.byte[2] := 1
     pipe_ctrl.byte[3] := 0
 
-	single_range := 1
+    single_range := 1
 
-	' SW reboot sequence
+    ' SW reboot sequence
 
-    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	bStatusOK |= writeByte($0009, 4)                                        ' status |= WrByte(&(p_dev->platform), 0x0009, 0x04)
-	bStatusOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
-	bStatusOK |= writeByte($000A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x03)
-    bTempStatusOK, tmp := readByte(VL53L5CX_REG_CONTROL)                    ' status |= RdByte(&(p_dev->platform), 0x7fff, &tmp)
-    bStatusOK |= bTempStatusOK
-	bStatusOK |= writeByte($000C, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x01)
-	bStatusOK |= writeByte($0101, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x0101, 0x00)
-	bStatusOK |= writeByte($0102, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x0102, 0x00)
-	bStatusOK |= writeByte($010A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x010A, 0x01)
-	bStatusOK |= writeByte($4002, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x01)
-	bStatusOK |= writeByte($4002, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x00)
-	bStatusOK |= writeByte($010A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x010A, 0x03)
-	bStatusOK |= writeByte($0103, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x0103, 0x01)
-	bStatusOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
-	bStatusOK |= writeByte($000A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x000F, 0x43)
-	waitus(1)                                                               ' status |= WaitMs(&(p_dev->platform), 1)
+    bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($0009, 4)                                        ' status |= WrByte(&(p_dev->platform), 0x0009, 0x04)
+    bStatusNotOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
+    bStatusNotOK |= writeByte($000A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x03)
+    bTempStatusNotOK, tmp := readByte(VL53L5CX_REG_CONTROL)                    ' status |= RdByte(&(p_dev->platform), 0x7fff, &tmp)
+    bStatusNotOK |= bTempStatusNotOK
+    bStatusNotOK |= writeByte($000C, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x01)
+    bStatusNotOK |= writeByte($0101, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x0101, 0x00)
+    bStatusNotOK |= writeByte($0102, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x0102, 0x00)
+    bStatusNotOK |= writeByte($010A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x010A, 0x01)
+    bStatusNotOK |= writeByte($4002, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x01)
+    bStatusNotOK |= writeByte($4002, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x00)
+    bStatusNotOK |= writeByte($010A, 3)                                        ' status |= WrByte(&(p_dev->platform), 0x010A, 0x03)
+    bStatusNotOK |= writeByte($0103, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x0103, 0x01)
+    bStatusNotOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
+    bStatusNotOK |= writeByte($000F, $43)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x43)
+    waitms(1)                                                               ' status |= WaitMs(&(p_dev->platform), 1)
 
-	bStatusOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
-	bStatusOK |= writeByte($000A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x01)
-	waitus(100)                                                             ' status |= WaitMs(&(p_dev->platform), 100)
+    bStatusNotOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
+    bStatusNotOK |= writeByte($000A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x01)
+    waitms(100)                                                             ' status |= WaitMs(&(p_dev->platform), 100)
 
-	' Wait for sensor booted (several ms required to get sensor ready )
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-    bStatusOK |= pollForAnswer(1, 0, $06, $FF, 1)                           ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 1)
+    ' Wait for sensor booted (several ms required to get sensor ready )
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= pollForAnswer(1, 0, $0006, $FF, 1)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 1)
 
-	bStatusOK |= writeByte($000E, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000E, 0x01)
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    bStatusNotOK |= writeByte($000E, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000E, 0x01)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
-	' Enable FW access
-	bStatusOK |= writeByte($0003, $0D)                                      ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
-    bStatusOK |= pollForAnswer(1, 0, $21, $10, $10)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    ' Enable FW access
+    bStatusNotOK |= writeByte($0003, $0D)                                      ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+    bStatusNotOK |= pollForAnswer(1, 0, $0021, $10, $10)                       ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
 
-	' Enable host access to GO1
-	bStatusOK := writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
+    ' Enable host access to GO1
+    bStatusNotOK |= writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
 
-	' Power ON status
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	bStatusOK |= writeByte($101, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x101, 0x00)
-	bStatusOK |= writeByte($102, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x102, 0x00)
-	bStatusOK |= writeByte($10A, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x010A, 0x01)
-	bStatusOK |= writeByte($4002, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x01)
-	bStatusOK |= writeByte($4002, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x00)
-	bStatusOK |= writeByte($10A, 3)                                         ' status |= WrByte(&(p_dev->platform), 0x010A, 0x03)
-	bStatusOK |= writeByte($103, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x103, 0x01)
-	bStatusOK |= writeByte($400F, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x400F, 0x00)
-	bStatusOK |= writeByte($21A, $43)                                       ' status |= WrByte(&(p_dev->platform), 0x21A, 0x43)
-	bStatusOK |= writeByte($21A, 3)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x03)
-	bStatusOK |= writeByte($21A, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x01)
-	bStatusOK |= writeByte($21A, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x00)
-	bStatusOK |= writeByte($219, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x219, 0x00)
-	bStatusOK |= writeByte($21B, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x21B, 0x00)
+    ' Power ON status
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($101, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x101, 0x00)
+    bStatusNotOK |= writeByte($102, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x102, 0x00)
+    bStatusNotOK |= writeByte($10A, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x010A, 0x01)
+    bStatusNotOK |= writeByte($4002, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x01)
+    bStatusNotOK |= writeByte($4002, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x4002, 0x00)
+    bStatusNotOK |= writeByte($10A, 3)                                         ' status |= WrByte(&(p_dev->platform), 0x010A, 0x03)
+    bStatusNotOK |= writeByte($103, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x103, 0x01)
+    bStatusNotOK |= writeByte($400F, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x400F, 0x00)
+    bStatusNotOK |= writeByte($21A, $43)                                       ' status |= WrByte(&(p_dev->platform), 0x21A, 0x43)
+    bStatusNotOK |= writeByte($21A, 3)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x03)
+    bStatusNotOK |= writeByte($21A, 1)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x01)
+    bStatusNotOK |= writeByte($21A, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x21A, 0x00)
+    bStatusNotOK |= writeByte($219, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x219, 0x00)
+    bStatusNotOK |= writeByte($21B, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x21B, 0x00)
 
-	' Wake up MCU
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	bStatusOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
-	bStatusOK |= writeByte($0020, 7)                                        ' status |= WrByte(&(p_dev->platform), 0x0020, 0x07)
-	bStatusOK |= writeByte($0020, 6)                                        ' status |= WrByte(&(p_dev->platform), $0020, 0x06)
-	' Download FW into VL53L5
-    bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK0)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x09)
-	bStatusOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][0], $8000)         ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) &VL53L5CX_FIRMWARE[0], 0x8000)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK1)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0a)
-	bStatusOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$8000], $8000)     ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x8000], 0x8000)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK2)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0b)
-	bStatusOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$10000], $5000)    ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x10000], 0x5000)
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+    ' Wake up MCU
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+    bStatusNotOK |= writeByte($0020, 7)                                        ' status |= WrByte(&(p_dev->platform), 0x0020, 0x07)
+    bStatusNotOK |= writeByte($0020, 6)                                        ' status |= WrByte(&(p_dev->platform), 0x0020, 0x06)
+    ' Download FW into VL53L5
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK0)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x09)
+    bStatusNotOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$00000], $8000)    ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) &VL53L5CX_FIRMWARE[0], 0x8000)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK1)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0a)
+    bStatusNotOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$08000], $8000)    ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x8000], 0x8000)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FWBANK2)  ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x0b)
+    bStatusNotOK |= writeBytes(0, @BYTE[@VL53L5CX_FIRMWARE][$10000], $5000)    ' status |= WrMulti(&(p_dev->platform), 0, (uint8_t *) & VL53L5CX_FIRMWARE[0x10000], 0x5000)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
 
-	' Check if FW correctly downloaded
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
-	bStatusOK |= writeByte($03, $0D)                                        ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
-	bStatusOK |= pollForAnswer(1, 0, $21, $10, $10)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10) //0x10
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	bStatusOK |= writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
+    ' Check if FW correctly downloaded
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    bStatusNotOK |= writeByte($03, $0D)                                        ' status |= WrByte(&(p_dev->platform), 0x03, 0x0D)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_FW)       ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x01)
+    bStatusNotOK |= pollForAnswer(1, 0, $0021, $10, $10)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x21, 0x10, 0x10) //0x10
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($0C, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x01)
 
-	' Reset MCU and wait boot
-	bStatusOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-	bStatusOK |= writeByte($114, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x114, 0x00)
-	bStatusOK |= writeByte($115, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x115, 0x00)
-	bStatusOK |= writeByte($116, 2)                                         ' status |= WrByte(&(p_dev->platform), 0x116, 0x42)
-	bStatusOK |= writeByte($117, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x117, 0x00)
-	bStatusOK |= writeByte($0B, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x00)
-	bStatusOK |= writeByte($0C, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x00)
-	bStatusOK |= writeByte($0B, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x01)
-	bStatusOK |= pollForAnswer(1, 0, $06, $ff, $00)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
-	bStatusOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
+    ' Reset MCU and wait boot
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+    bStatusNotOK |= writeByte($114, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x114, 0x00)
+    bStatusNotOK |= writeByte($115, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x115, 0x00)
+    bStatusNotOK |= writeByte($116, $42)                                       ' status |= WrByte(&(p_dev->platform), 0x116, 0x42)
+    bStatusNotOK |= writeByte($117, 0)                                         ' status |= WrByte(&(p_dev->platform), 0x117, 0x00)
+    bStatusNotOK |= writeByte($0B, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x00)
+    bStatusNotOK |= writeByte($0C, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x00)
+    bStatusNotOK |= writeByte($0B, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x01)
+    bStatusNotOK |= pollForAnswer(1, 0, $0006, $ff, $00)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
+    bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
-	' Get offset NVM data and store them into the offset buffer
-	'status |= WrMulti(&(p_dev->platform), 0x2fd8, (uint8_t *)VL53L5CX_GET_NVM_CMD, sizeof(VL53L5CX_GET_NVM_CMD))
-    bStatusOK |= writeBytes($2fd8, @VL53L5CX_GET_NVM_CMD, VL53L5CX_GET_NVM_CMD_LEN)
+    debug(">>  CHECK: VL53L5CX_GET_NVM_CMD_LEN = ", udec_(VL53L5CX_GET_NVM_CMD_LEN))
+    debug(">>  CHECK: VL53L5CX_DEFAULT_CONFIG_LEN = ", udec_(VL53L5CX_DEFAULT_CONFIG_LEN))
+    debug(">>  CHECK: VL53L5CX_DEFAULT_XTALK_LEN = ", udec_(VL53L5CX_DEFAULT_XTALK_LEN))
+    debug(">>  CHECK: VL53L5CX_FIRMWARE_LEN = ", udec_(VL53L5CX_FIRMWARE_LEN))
 
-	'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 0, VL53L5CX_UI_CMD_STATUS, 0xff, 2)
-    bStatusOK |= pollForAnswer(4, 0, VL53L5CX_UI_CMD_STATUS, $FF, 2)
+    ' Get offset NVM data and store them into the offset buffer
+    'status |= WrMulti(&(p_dev->platform), 0x2fd8, (uint8_t *)VL53L5CX_GET_NVM_CMD, sizeof(VL53L5CX_GET_NVM_CMD))
+    bStatusNotOK |= writeBytes($2fd8, @VL53L5CX_GET_NVM_CMD, VL53L5CX_GET_NVM_CMD_LEN)
 
-	' status |= RdMulti(&(p_dev->platform), VL53L5CX_UI_CMD_START, p_dev->temp_buffer, VL53L5CX_NVM_DATA_SIZE)
-    bStatusOK |= readBytes(VL53L5CX_UI_CMD_START, VL53L5CX_NVM_DATA_SIZE, @tempBuffer)
+    'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 0, VL53L5CX_UI_CMD_STATUS, 0xff, 2)
+    bStatusNotOK |= pollForAnswer(4, 0, VL53L5CX_UI_CMD_STATUS, $FF, $02)
 
-	' (void)memcpy(p_dev->offset_data, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    ' status |= RdMulti(&(p_dev->platform), VL53L5CX_UI_CMD_START, p_dev->temp_buffer, VL53L5CX_NVM_DATA_SIZE)
+    bStatusNotOK |= readBytes(VL53L5CX_UI_CMD_START, VL53L5CX_NVM_DATA_SIZE, @tempBuffer)
+
+    ' (void)memcpy(p_dev->offset_data, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
     ' NOTE not copying before send... new method does its own copy
-	bStatusOK |= sendOffsetData(VL53L5CX_RESOLUTION_4X4, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    bStatusNotOK |= sendOffsetData(VL53L5CX_RESOLUTION_4X4, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
-	' Set default Xtalk shape. Send Xtalk to sensor
-	' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+    ' Set default Xtalk shape. Send Xtalk to sensor
+    ' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
     ' NOTE not copying before send... new method does its own copy
-	bStatusOK |= sendXtalkData(VL53L5CX_RESOLUTION_4X4, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+    bStatusNotOK |= sendXtalkData(VL53L5CX_RESOLUTION_4X4, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
 
-	' Send default configuration to VL53L5CX firmware
-	' status |= WrMulti(&(p_dev->platform), 0x2c34, (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION, sizeof(VL53L5CX_DEFAULT_CONFIGURATION))
-    bStatusOK |= writeBytes($2c34, @VL53L5CX_DEFAULT_CONFIGURATION, VL53L5CX_DEFAULT_CONFIG_LEN)
 
-	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    bStatusOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+    ' Send default configuration to VL53L5CX firmware
+    ' status |= WrMulti(&(p_dev->platform), 0x2c34, (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION, sizeof(VL53L5CX_DEFAULT_CONFIGURATION))
+    bStatusNotOK |= writeBytes($2c34, @VL53L5CX_DEFAULT_CONFIGURATION, VL53L5CX_DEFAULT_CONFIG_LEN)
 
-	' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
-    bStatusOK |= writeBytes(VL53L5CX_DCI_PIPE_CONTROL, @pipe_ctrl, 4)
+    ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+
+    ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
+    bStatusNotOK |= writeBytes(VL53L5CX_DCI_PIPE_CONTROL, @pipe_ctrl, 4)
 
     if VL53L5CX_NB_TGT_PER_ZONE <> 1
         tmp := VL53L5CX_NB_TGT_PER_ZONE
-        bStatusOK |= dciReplaceData(@tempBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp.byte[0], 1, $0C)
+        bStatusNotOK |= dciReplaceData(@tempBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp.byte[0], 1, $0C)
 
-	' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-    bStatusOK |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)   ' write 32-bit value
+    ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
+    single_range := valueToDevice(single_range)
+    bStatusNotOK |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)   ' write 32-bit value
 
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
+' ---------------------------------------------------------
+' the Propeller physical storage vs. logical is as follows:
+'
+' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
+'    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
+'
+' REAL: Read returned $95 $A1 $23 $4B
+' Expect Value of:    $4B $23 $A1 $95
+'
+' ---------------------------------------------------------
+PRI valueFmDevice(nDeviceOrderedValue) : logicalValue32b
+' convert LONG from device to logical order
+
+    logicalValue32b.byte[0] := nDeviceOrderedValue.byte[3]
+    logicalValue32b.byte[1] := nDeviceOrderedValue.byte[2]
+    logicalValue32b.byte[2] := nDeviceOrderedValue.byte[1]
+    logicalValue32b.byte[3] := nDeviceOrderedValue.byte[0]
+    'debug("valueFmDevice(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
+
+PRI valueToDevice(logicalValue32b) : nDeviceOrderedValue
+' convert LONG from logical to device order
+
+    nDeviceOrderedValue.byte[0] := logicalValue32b.byte[3]
+    nDeviceOrderedValue.byte[1] := logicalValue32b.byte[2]
+    nDeviceOrderedValue.byte[2] := logicalValue32b.byte[1]
+    nDeviceOrderedValue.byte[3] := logicalValue32b.byte[0]
+    'debug("valueToDevice(", uhex_long_(logicalValue32b), ") returns ", uhex_long_(nDeviceOrderedValue))
 
 
 CON { Device Registers - best we can tell }
@@ -722,7 +817,7 @@ DAT { start ranging data }
     output_bh_en_end
     output_bh_en_len    LONG    @output_bh_en_end - @output_bh_enable   ' number of output_bh_enable[] bytes
 
-	' set addresses of possible output
+    ' set addresses of possible output
     output              LONG    0[12]
     output_end
     output_len          LONG    @output_end - @output                   ' number of output[] bytes
@@ -792,25 +887,25 @@ VAR { driver uninitialized data }
 ' -----------------------------------
 ' typedef struct VL53L5CX_Configuration
 ' -----------------------------------
-	' Platform, filled by customer into the 'platform.h' file */
-	'    VL53L5CX_Platform	platform
-	' Results streamcount, value auto-incremented at each range */
-	BYTE		    streamcount
-	' Size of data read though I2C */
-	LONG	        dataReadSize
-	' Address of default configuration buffer */
-	LONG	        pDefaultConfigurationBytes
-	' Address of default Xtalk buffer */
-	LONG		    pDefaultXtalkBytes
-	' Offset buffer */
-	BYTE		    offset_data[VL53L5CX_OFFSET_BUFFER_SIZE]
-	' Xtalk buffer */
-	BYTE		    xtalk_data[VL53L5CX_XTALK_BUFFER_SIZE]
-	' Temporary buffer used for internal driver processing */
-	BYTE	        temp_buffer[VL53L5CX_TEMP_BUFFER_SIZE]
+    ' Platform, filled by customer into the 'platform.h' file */
+    '    VL53L5CX_Platform	platform
+    ' Results streamcount, value auto-incremented at each range */
+    BYTE		    streamcount
+    ' Size of data read though I2C */
+    LONG	        dataReadSize
+    ' Address of default configuration buffer */
+    LONG	        pDefaultConfigurationBytes
+    ' Address of default Xtalk buffer */
+    LONG		    pDefaultXtalkBytes
+    ' Offset buffer */
+    BYTE		    offset_data[VL53L5CX_OFFSET_BUFFER_SIZE]
+    ' Xtalk buffer */
+    BYTE		    xtalk_data[VL53L5CX_XTALK_BUFFER_SIZE]
+    ' Temporary buffer used for internal driver processing */
+    'BYTE	        temp_buffer[VL53L5CX_TEMP_BUFFER_SIZE]
+    BYTE            tempBuffer[VL53L5CX_TEMP_BUFFER_SIZE]
 ' -----------------------------------
 
-    BYTE            tempBuffer[TMP_SIZE_IN_BYTES]   ' FIXME: merge this and above one
 
 
 CON '  --- Device Literals for register load ---
@@ -871,6 +966,8 @@ CON '  --- Device Literals for register load ---
 
 PRI initDriver()
 ' initialize our variables based upon number targets / zone compile value
+' this is our new driver RUN-TIME configuration (was compile-time in example drivers)
+
     if VL53L5CX_NB_TGT_PER_ZONE == 1
         ' 32-bit values
         startBh                 := VL53L5CX_T1_START_BH
@@ -956,123 +1053,160 @@ PRI initDriver()
 
     if maxResultsSize > VL53L5CX_TEMP_BUFFER_SIZE
         debug("initDriver() ERROR need buffer: ", udec_(maxResultsSize), ", which exceeds allocated: ", udec_(VL53L5CX_TEMP_BUFFER_SIZE))
-PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : status | timeout, bStatusOK
-    status := VL53L5CX_STATUS_OK
 
+
+PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : eDvcStatus | timeout, bStatusNotOK, bTimedOut, bFaulted, fwErrByte
+    DEBUG("pollForAnswer() ", udec_byte(size8), udec_byte(posn8), uhex_word(addr16), uhex_byte(mask8), uhex_byte(expectedValue8))
     timeout := 0
+    bTimedOut := FALSE
+    bFaulted := FALSE
+    fwErrByte := FALSE
+    bStatusNotOK := 0
+    eDvcStatus := VL53L5CX_STATUS_OK
+
+    if posn8 >= size8
+        DEBUG("pollForAnswer() ERROR bad posn vs. size: ", udec_byte(size8), udec_byte(posn8))
 
     repeat
         'status |= RdMulti(&(p_dev->platform), addr16, p_dev->temp_buffer, size8)
-        bStatusOK := readBytes(addr16, size8, @tempBuffer)
-        ' status |= WaitMs(&(p_dev->platform), 10)
-        waitus(10)
+        bStatusNotOK |= readBytes(addr16, size8, @tempBuffer)
+        ' NOPE, do below....      status |= WaitMs(&(p_dev->platform), 10)
 
-        if (timeout >= 200) '  2s timeout
-            ' status |= p_dev->temp_buffer[2]
-            status |= BYTE[@tempBuffer][2]
-        elseif ((size8 >= 4) and (BYTE[@tempBuffer][2] >= $7f))
-            status := VL53L5CX_MCU_ERROR
+        '  2s timeout
+        if (timeout >= 200)
+            bTimedOut := TRUE
+            eDvcStatus := VL53L5CX_MCU_ERROR
+            ' FW error
+            if size8 >= 3
+                fwErrByte := BYTE[@tempBuffer][2]          ' status |= p_dev->temp_buffer[2]
+                debug("  - TIMEOUT: ", uhex(eDvcStatus), uhex(fwErrByte), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", bufERRbyt=", uhex_byte_(BYTE[@tempBuffer][2]))
+            else
+                debug("  - TIMEOUT: ", uhex(eDvcStatus), "read=", uhex_byte_(BYTE[@tempBuffer][posn8]))
+            debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@tempBuffer, size8))
             quit
-        else
-            timeout++
+        elseif ((size8 >= 3) and (BYTE[@tempBuffer][2] >= $7f))
+            bFaulted := TRUE
+            eDvcStatus := VL53L5CX_MCU_ERROR
+            debug("  - ABORT: ", uhex(eDvcStatus), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", bufERRbyt=", uhex_byte_(BYTE[@tempBuffer][2]))
+            debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@tempBuffer, size8))
+            quit
 
-    while ((BYTE[@tempBuffer][posn8] & mask8) <> expectedValue8)
+        if ((BYTE[@tempBuffer][posn8] & mask8) == expectedValue8)
+            quit
 
-PRI sendOffsetData(resolution, pSourceBytes, nLenSourceBytes) : status | j, i, k
+        timeout++
+
+        ' status |= WaitMs(&(p_dev->platform), 10) (was ABOVE moved to here)
+        waitMS(10)
+
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+
+    if eDvcStatus <> VL53L5CX_STATUS_OK and not bTimedOut
+        debug("  - ERROR: read fault  ", uhex_byte(eDvcStatus), uhex_byte(bStatusNotOK), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expectedValue8), "]")
+    elseif not bTimedOut and not bFaulted
+        debug("  - FOUND it!  ", uhex_byte(eDvcStatus), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expectedValue8), "]")
+
+
+PRI sendOffsetData(resolution, pSourceBytes, nLenSourceBytes) : eDvcStatus | j, i, k, bStatusNotOK
 ' Inner function, not available outside this file. This function is used
 '  to set the offset data gathered from NVM.
-	status := VL53L5CX_STATUS_OK
+    eDvcStatus := VL53L5CX_STATUS_OK
 
-	BYTEMOVE(@ofsTempBuffer, pSourceBytes, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
+    BYTEMOVE(@ofsTempBuffer, pSourceBytes, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
 
-	' Data extrapolation is required for 4X4 offset
-	if resolution == VL53L5CX_RESOLUTION_4X4
-		BYTEMOVE(@BYTE[@ofsTempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
+    ' Data extrapolation is required for 4X4 offset
+    if resolution == VL53L5CX_RESOLUTION_4X4
+        BYTEMOVE(@BYTE[@ofsTempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
         ' convert tempBuffer into device byte-order
-		swapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        swapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
         ' extract signal grid
-		BYTEMOVE(@signal_grid, @BYTE[@ofsTempBuffer][$3c], SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
+        BYTEMOVE(@signal_grid, @BYTE[@ofsTempBuffer][$3c], SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
         ' extract range grid
-		BYTEMOVE(@range_grid, @BYTE[@ofsTempBuffer][$140], RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(range_grid, &(p_dev->temp_buffer[0x140]), sizeof(range_grid))
+        BYTEMOVE(@range_grid, @BYTE[@ofsTempBuffer][$140], RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(range_grid, &(p_dev->temp_buffer[0x140]), sizeof(range_grid))
 
-		repeat j from 0 to 4 - 1                                                    ' for (j = 0 j < (int8_t)4 j++)
-			repeat i from 0 to 4 - 1                                                ' for (i = 0 i < (int8_t)4 i++)
-				BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
-				BYTE[@range_grid][i + (4 * j)] := (BYTE[@range_grid][(2 * i) + (16 * j)] + BYTE[@range_grid][(2 * i) + (16 * j) + 1] + BYTE[@range_grid][(2 * i) + (16 * j) + 8] + BYTE[@range_grid][(2 * i) + (16 * j) + 9]) / 4
+        repeat j from 0 to 4 - 1                                                    ' for (j = 0 j < (int8_t)4 j++)
+            repeat i from 0 to 4 - 1                                                ' for (i = 0 i < (int8_t)4 i++)
+                BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
+                BYTE[@range_grid][i + (4 * j)] := (BYTE[@range_grid][(2 * i) + (16 * j)] + BYTE[@range_grid][(2 * i) + (16 * j) + 1] + BYTE[@range_grid][(2 * i) + (16 * j) + 8] + BYTE[@range_grid][(2 * i) + (16 * j) + 9]) / 4
 
         ' clear some spaces within range grid
-		BYTEFILL(@BYTE[@range_grid][$10], 0, 96)                                    ' (void)memset(&range_grid[0x10], 0, (uint16_t)96)
+        BYTEFILL(@BYTE[@range_grid][$10], 0, 96)                                    ' (void)memset(&range_grid[0x10], 0, (uint16_t)96)
         ' clear some spaces within signal grid
-		BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
+        BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
 
         ' replace signal grid
-		BYTEMOVE(@BYTE[@ofsTempBuffer][$3c], @signal_grid, SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
+        BYTEMOVE(@BYTE[@ofsTempBuffer][$3c], @signal_grid, SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
         ' replace range grid
-		BYTEMOVE(@BYTE[@ofsTempBuffer][$140], @range_grid, RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
+        BYTEMOVE(@BYTE[@ofsTempBuffer][$140], @range_grid, RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
 
         ' convert tempBuffer into device byte-order
-		swapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        swapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
     ' shift buffer up 8 bytes ?! (removing first 8 bytes, leaving copy of last 8 bytes!)
     '  FIXME: this seems broken as we are moving up 8 but our length is (max - 4) ?? this should be max - 8, right?
-	repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                        ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
-		BYTE[@ofsTempBuffer][k] := BYTE[@ofsTempBuffer][k + 8]                      ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
+    repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                        ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
+        BYTE[@ofsTempBuffer][k] := BYTE[@ofsTempBuffer][k + 8]                      ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
 
-	BYTEMOVE(@BYTE[@ofsTempBuffer][$1e0], @footer, 8)                               ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
+    BYTEMOVE(@BYTE[@ofsTempBuffer][$1e0], @footer, 8)                               ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
 
-	' status |= WrMulti(&(p_dev->platform), 0x2e18, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
-    status |= writeBytes($2e18, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    ' status |= WrMulti(&(p_dev->platform), 0x2e18, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    bStatusNotOK := writeBytes($2e18, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
-	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    status |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
+    ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PRI sendXtalkData(resolution, pSourceBytes, nLenSourceBytes) : status | j, i
+PRI sendXtalkData(resolution, pSourceBytes, nLenSourceBytes) : eDvcStatus | j, i, bStatusNotOK
 ' Inner function, not available outside this file. This function is used
 '   to set the Xtalk data from generic configuration, or user's calibration.
-	status := VL53L5CX_STATUS_OK
+    eDvcStatus := VL53L5CX_STATUS_OK
 
     ' copy external buffer to tempBuffer
-	BYTEMOVE(@xtalkTempBuffer, pSourceBytes, VL53L5CX_XTALK_BUFFER_SIZE)        ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
+    BYTEMOVE(@xtalkTempBuffer, pSourceBytes, VL53L5CX_XTALK_BUFFER_SIZE)        ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
 
-	' Data extrapolation is required for 4X4 Xtalk
-	if (resolution == VL53L5CX_RESOLUTION_4X4)
+    ' Data extrapolation is required for 4X4 Xtalk
+    if (resolution == VL53L5CX_RESOLUTION_4X4)
         ' overlay new values into tempBuffer
-		BYTEMOVE(@BYTE[@xtalkTempBuffer][$08], @res4x4, 8)                      ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4, sizeof(res4x4))
-		BYTEMOVE(@BYTE[@xtalkTempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
+        BYTEMOVE(@BYTE[@xtalkTempBuffer][$08], @res4x4, 8)                      ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4, sizeof(res4x4))
+        BYTEMOVE(@BYTE[@xtalkTempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
 
         ' convert tempBuffer into device byte-order
-		swapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        swapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
         ' extract copy of ordered signal grid
-		BYTEMOVE(@signal_grid, @BYTE[@xtalkTempBuffer][$34], 64)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
+        BYTEMOVE(@signal_grid, @BYTE[@xtalkTempBuffer][$34], 64)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
 
         ' recalculate values within signal grid
-		repeat j from 0 to 4 - 1                                                ' for (j = 0 j < (int8_t)4 j++)
-			repeat i from 0 to 4 - 1                                            ' for (i = 0 i < (int8_t)4 i++)
-				BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
+        repeat j from 0 to 4 - 1                                                ' for (j = 0 j < (int8_t)4 j++)
+            repeat i from 0 to 4 - 1                                            ' for (i = 0 i < (int8_t)4 i++)
+                BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
 
         ' clear some spaces within signal grid
-		BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                              ' (void)memset(&signal_grid[0x10], 0, (uint32_t)192)
+        BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                              ' (void)memset(&signal_grid[0x10], 0, (uint32_t)192)
 
         ' copy updated signal grid back into temp buffer
-		BYTEMOVE(@BYTE[@xtalkTempBuffer][$34], @signal_grid, 64)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
+        BYTEMOVE(@BYTE[@xtalkTempBuffer][$34], @signal_grid, 64)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
 
         ' convert tempBuffer into device byte-order - FIXME: HUH? why doing this again?  Shouldn't only place be here?!!
-		swapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        swapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
 
         ' copy profile_4x4 into temp buffer
-		BYTEMOVE(@BYTE[@xtalkTempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
+        BYTEMOVE(@BYTE[@xtalkTempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
 
         ' clear 4 bytes within temp buffer
-		BYTEFILL(@BYTE[@xtalkTempBuffer][$078], 0, 4)                           ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
+        BYTEFILL(@BYTE[@xtalkTempBuffer][$078], 0, 4)                           ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
 
     ' write temp buffer out to device
-	' status |= WrMulti(&(p_dev->platform), 0x2cf8, p_dev->temp_buffer, VL53L5CX_XTALK_BUFFER_SIZE)
-    status |= writeBytes($2cf8, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
-	' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    status |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
+    ' status |= WrMulti(&(p_dev->platform), 0x2cf8, p_dev->temp_buffer, VL53L5CX_XTALK_BUFFER_SIZE)
+    bStatusNotOK := writeBytes($2cf8, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+    ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
+    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PRI swapBuffer(pByteArray, nbrBytes) | tmp, i
 ' Inner function, not available outside this file. This function is used
@@ -1082,21 +1216,23 @@ PRI swapBuffer(pByteArray, nbrBytes) | tmp, i
         '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
         '
     ' FIXME: verify above reality against code-actual below (correct the code)
-	repeat i from 0 to nbrBytes - 1 step 4                                      ' for (i = 0 i < size i = i + 4)
-		tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
+    repeat i from 0 to nbrBytes - 1 step 4                                      ' for (i = 0 i < size i = i + 4)
+        tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
         LONGFILL(@BYTE[pByteArray][i], tmp, 1)                                  ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
 
 
-PRI dciReplaceData(pDataBffr, register16, dataBffrSize, pNewData, newDataSize, newDataOfst) : status
+PRI dciReplaceData(pDataBffr, register16, dataBffrSize, pNewData, newDataSize, newDataOfst) : eDvcStatus | bStatusNotOK
 ' REF uint8_t vl53l5cx_dci_replace_data(p_dev, *data, index, data_size, *new_data, new_data_size, new_data_pos)
-	status := VL53L5CX_STATUS_OK
+    eDvcStatus := VL53L5CX_STATUS_OK
 
-    status |= readBytes(register16, dataBffrSize, pDataBffr)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
+    bStatusNotOK |= readBytes(register16, dataBffrSize, pDataBffr)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
 
     BYTEMOVE(@BYTE[pDataBffr][newDataOfst], pNewData, newDataSize)  ' (void)memcpy(&(data[new_data_pos]), new_data, new_data_size)
 
-	status |= writeBytes(register16, pDataBffr, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
+    bStatusNotOK |= writeBytes(register16, pDataBffr, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
 
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
 
 CON '  ---- Device reads & writes ----
 
@@ -1125,13 +1261,14 @@ PRI writeBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAc
     '  to {regAddr16}+2 and so on
     i2c_bus.start()
     ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
     ackBit := i2c_bus.write(regAddr16.byte[1])
     ok |= ackbit
+    ackBit := i2c_bus.write(regAddr16.byte[0])
+    ok |= ackbit
     repeat byteIndex from 0 to byteCount - 1
-        endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
+        'endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
         ackBit := i2c_bus.write(BYTE [pByteStore][byteIndex])
+        ok |= ackbit
     i2c_bus.stop()
 
     'if bShowDebug
@@ -1143,18 +1280,19 @@ PRI readByte(regAddr16) : ok, result8 | ackbit
     ' Read {result16} from register {regAddr16}
     i2c_bus.start()
     ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
+    ok |= ackbit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit := i2c_bus.write(regAddr16.byte[0])
+    i2c_bus.stop()
+'    waitus(1)
     i2c_bus.start()
-    ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
-    ok |= ackbit
-    result8 := i2c_bus.read(i2c_bus.NAK)
+    ok |= ackbit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
+    result8 := i2c_bus.read(i2c_bus.NAK)    ' (want NAK and STOP, NOT needed)
+    'result8 := i2c_bus.read(i2c_bus.ACK)    ' was NAK (want NAK or STOP)
     i2c_bus.stop()
     'if bShowDebug
     '    'debug(`snsLog ' * readByte(0x%.02x) ok:%d, byt=0x%.02x, ret %d' 10), regAddr16, ok, result8, result8)
     debug(" -rdBy: ", udec(ok), uhex_byte(regAddr16), uhex_byte(result8))
+'    debug("readByte() ", uhex(ok))
 
 
 PRI readBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAckNak, result8
@@ -1166,16 +1304,16 @@ PRI readBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAck
     '    term.fstr2(string("* readBytes(0x%.02x, ct=%d)' 10), regAddr16, byteCount)
     i2c_bus.start()
     ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
+    ok |= ackBit := i2c_bus.write(regAddr16.byte[1])
+    ok |= ackbit := i2c_bus.write(regAddr16.byte[0])
+    i2c_bus.stop()
+'    waitus(1)
     i2c_bus.start()
-    ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
-    ok |= ackbit
+    ok |= ackbit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
     repeat byteIndex from 0 to byteCount - 1
         endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
-        result8 := i2c_bus.read(endAckNak)
+        result8 := i2c_bus.read(endAckNak)    ' use NAK on last and let's use stop
+        'result8 := i2c_bus.read(i2c_bus.ACK)    ' was ACK or NAK on last but let's use stop
         result8 := result8 signx 7
         BYTE [pByteStore][byteIndex] := result8
         'if bShowDebug
@@ -1183,95 +1321,23 @@ PRI readBytes(regAddr16, byteCount, pByteStore) : ok | ackbit, byteIndex, endAck
     i2c_bus.stop()
     'if bShowDebug
     '    term.fstr3(string(" -- readBytes(0x%.02x, ct=%d) ok:%d' 10), regAddr16, byteCount, ok)
-
-
-PRI writeWord(regAddr16, dataValue16) : ok | ackbit
-    ' Write {dataValue16} to register {regAddr16} - hi byte to {regAddr16}, lo byte to {regAddr16}+1
-    i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    ackBit := i2c_bus.write(dataValue16.byte[1])
-    ok |= ackbit
-    ackBit := i2c_bus.write(dataValue16.byte[0])
-    ok |= ackbit
-    i2c_bus.stop()
-    waitms(2)  ' after each write!
-
-    'if bShowDebug
-    ' following is more than 10ms...
-    '    term.fstr3(string("* writeWord(0x%.02x)=0x%.04x ok:%d' 10), regAddr16, dataValue16, ok)
-
-
-PRI readWord(regAddr16) : ok, result16 | ackbit
-    ' Read {result16} from register {regAddr16} - hi byte from {regAddr16}, lo byte from {regAddr16}+1
-    i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    i2c_bus.start()
-    ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
-    ok |= ackbit
-    result16.byte[1] := i2c_bus.read(i2c_bus.ACK)
-    result16.byte[0] := i2c_bus.read(i2c_bus.NAK)
-    i2c_bus.stop()
-    result16 := result16 signx 15   ' sign extend
-    'if bShowDebug
-    '    term.fstr5(string("* readWord(0x%.02x) ok:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr16, ok, result16.byte[1], result16.byte[0], result16)
-    debug(" -rdWd: ", udec(ok), uhex_byte(regAddr16), uhex_word(result16))
-
-
-PRI readWords(regAddr16, wordCount, pWordStore) : ok | ackbit, wordIndex, endAckNak, result16
-    ' Read {wordCount} WORDs starting from register {regAddr16} - hi byte from {regAddr16},
-    '  lo byte from {regAddr16}+1, hi byte from {regAddr16}+2, lo byte from {regAddr16}+3 and so on
-    '  placing them into WORD array located at {pWordStore}
-
-    'if bShowDebug
-    '    term.fstr2(string("* readWords(0x%.02x, ct=%d)' 10), regAddr16, wordCount)
-    i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16)
-    ok |= ackbit
-    i2c_bus.start()
-    ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
-    ok |= ackbit
-    repeat wordIndex from 0 to wordCount - 1
-        endAckNak := (wordIndex == wordCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
-        result16.byte[1] := i2c_bus.read(i2c_bus.ACK)
-        result16.byte[0] := i2c_bus.read(endAckNak)
-        result16 := result16 signx 15   ' sign extend
-        WORD [pWordStore][wordIndex] := result16
-        'if bShowDebug
-        '    term.fstr7(string(" -- readWords(0x%.02x) ok:%d, hi:0x%.02x, lo:0x%.02x, WORD[%d]ret 0x%.04x(%d)' 10), regAddr16 + (wordIndex * 2), ok, result16.byte[1], result16.byte[0], wordIndex, result16, result16)
-    i2c_bus.stop()
-    'if bShowDebug
-    '    term.fstr3(string(" -- readWords(0x%.02x, ct=%d) ok:%d' 10), regAddr16, wordCount, ok)
-    debug("readWords: ", uhex_byte(regAddr16), udec_long(wordCount))
-    repeat wordIndex from 0 to wordCount - 1
-        debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordStore][wordIndex]))
-
-
+    if ok <> 0
+        debug("readBytes() ", uhex(ok))
 
 DAT { Data for PRIVATE Methods }
-	signal_grid     LONG    0[SIGNAL_GRID_SIZE_BYTES]
-	range_grid      WORD    0[RANGE_GRID_SIZE_BYTES]
+    signal_grid     LONG    0[SIGNAL_GRID_SIZE_BYTES]
+    range_grid      WORD    0[RANGE_GRID_SIZE_BYTES]
 
-	dss_4x4Ofs      BYTE    $0F, $04, $04, $00, $08, $10, $10, $07
-	footer          BYTE    $00, $00, $00, $0F, $03, $01, $01, $E4
+    dss_4x4Ofs      BYTE    $0F, $04, $04, $00, $08, $10, $10, $07
+    footer          BYTE    $00, $00, $00, $0F, $03, $01, $01, $E4
 
-	res4x4          BYTE    $0F, $04, $04, $17, $08, $10, $10, $07
-	dss_4x4         BYTE    $00, $78, $00, $08, $00, $00, $00, $08
-	profile_4x4     BYTE    $A0, $FC, $01, $00
+    res4x4          BYTE    $0F, $04, $04, $17, $08, $10, $10, $07
+    dss_4x4         BYTE    $00, $78, $00, $08, $00, $00, $00, $08
+    profile_4x4     BYTE    $A0, $FC, $01, $00
 
     ' FIXME: convert following to single buffer if conditional constant assignment above compiles
     xtalkTempBuffer BYTE    0[VL53L5CX_XTALK_BUFFER_SIZE]   ' 776 bytes
     ofsTempBuffer   BYTE    0[VL53L5CX_OFFSET_BUFFER_SIZE]    ' 488 bytes
-
-
 
 DAT { fixed driver tables }
 

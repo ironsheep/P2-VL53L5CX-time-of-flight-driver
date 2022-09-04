@@ -513,10 +513,10 @@ PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVar
 '' Return pointers to HDMI-debug data structures for this motor-object instance
     loadDisplayList()
     nGroups := DBG_GROUPS_CT
-    pGroupTitles := @pTitlesAr         ' pStr = LONG[pTitlesAr][grpIdx]
-    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars = LONG[pVarCtAr][grpIdx]
-    pGroupNames := @pNamesAr           ' pGrpNameAr = LONG[pNamesAr][grpIdx], pVarName = LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
-    pGroupVars := @pValsAr             ' pGrpLongVar = LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupTitles := @pTitlesAr         ' pStr := LONG[pTitlesAr][grpIdx]
+    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars := LONG[pVarCtAr][grpIdx]
+    pGroupNames := @pNamesAr           ' pGrpNameAr := LONG[pNamesAr][grpIdx], pVarName := LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupVars := @pValsAr             ' pGrpLongVar := LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
     {
     if showHDMIDebug
         debug("* -------------")
