@@ -38,6 +38,12 @@ This sensor is available in a number of forms from a number of sources:
 Latest Changes:
 
 ```
+5 Sep 2022
+- Started porting unload and overall ranging control code
+4 Sep 2022
+- Firmware upload to VL53L5CX MCU is tested and working
+24 Aug 2022
+- Driver for i2c I/O port expander tested and working, had own demo
 20 Aug 2022
 - Project started
 ```
