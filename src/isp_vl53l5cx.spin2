@@ -193,7 +193,7 @@ PUB stop()
 
 PUB enableMyIOToo() | pScl, pSda, pnInt, pRst, pLpn, pPwren  ' whoa pInt collides with internal var?!
 '' allow new cog to do I/O's too
-    debug("VL53: I/O Access Setup")
+    debug("VL53: I/O PINs Setup")
     pScl :=  pin_scl  ' copy pins to pasm acccesible location
     pSda :=  pin_sda  ' copy pins to pasm acccesible location
     pnInt :=  pin_int  ' copy pins to pasm acccesible location
@@ -203,10 +203,10 @@ PUB enableMyIOToo() | pScl, pSda, pnInt, pRst, pLpn, pPwren  ' whoa pInt collide
     org
     dirh    pScl    ' set to output
     dirh    pSda
-    dirh    pRst
-    dirh    pLpn
-    dirh    pPwren
-    dirl    pnInt    ' set to input
+    'dirh    pRst
+    'dirh    pLpn
+    'dirh    pPwren
+    'dirl    pnInt    ' set to input
     end
 
 CON ' --- VL53L5CX PUBLIC interface ---
@@ -809,7 +809,7 @@ PRI setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : ok
     floatPins()
 
     ' enable 5v to 3.3v power supply
-    pinh(pin_pwren)             ' assert pwr enable
+    pinh(pin_pwren)             ' assert PWR enable
 
     ' condition the chip drive
     pinh(pin_lpn)               ' assert LPn (enable device selection)
@@ -844,7 +844,7 @@ PRI floatPins()
 PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
     ' Identify the address our device is at on the i2c bus
     floatPins()
-        ' enable 5v to 3.3v power supply
+    ' enable 5v to 3.3v power supply
     pinh(pin_pwren)             ' assert pwr enable
     waitus(2)
 

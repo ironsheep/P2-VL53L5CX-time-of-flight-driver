@@ -155,7 +155,6 @@ PRI taskMonitorRanging(imageWidth) | bDataReady, eDvcStatus, bDataReturned, x, y
 
 CON { ------ PRIVATE (Utility) Methods ------ }
 
-
 PRI locateSensor() : ok | bDevicePresent, addrFound
     ' find and configure our mpu9dof device
     debug(`demoLog 'Setup...' 10)
