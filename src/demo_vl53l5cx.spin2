@@ -7,7 +7,7 @@
 ''               -- see below for terms of use
 ''   E-mail..... stephen@ironsheep.biz
 ''   Started.... Aug 2022
-''   Updated.... 20 Aug 2022
+''   Updated.... 5 Sep 2022
 ''
 '' =================================================================================================
 
@@ -84,7 +84,7 @@ DAT { run-time condition vars }
 
 CON { -------------- MAIN -------------- }
 
-PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, basePin
+PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, basePin, imageResolution, imageWidth, bDvcFound, eDvcStatus
     '' Main entry point of MPU 9DOF demo
     debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
 
@@ -96,53 +96,80 @@ PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupV
         tvDebug.registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars)
     else
         showHDMIDebug := FALSE  ' force this off is not using HDMI
-{
-    senseCog := cogspin(NEWCOG, taskReadSensor(), @senseStack) + 1
-    if senseCog == 0    ' did fail?
-        debug("!! ERROR filed to start 9DOF Sense task")
-'}
-    locateSensor()
 
-    ' Configure VL53L5CX satellite component.
-    tofSensor.begin()
+    bDvcFound := locateSensor()
+
+    if bDvcFound
+
+        tofSensor.setResolution(tofSensor.VL53L5CX_RESOLUTION_8X8)      ' Enable all 64 pads
+
+        ' start ranging result display loop
+        cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
+
+        eDvcStatus, imageResolution := tofSensor.getResolution()                     ' Query sensor for current resolution - either 4x4 or 8x8
+        debug("* imageResolution = ", udec(imageResolution))
+        imageWidth := sqrt imageResolution                               ' Calculate printing width
+
+        tofSensor.startRanging()
 
     repeat  ' halt here for now
-
-    ' Start Measurements
-    tofSensor.startRanging()
-
-
-    repeat  ' halt here for now
-
-    ' start ranging result display loop
-    cog := cogspin(NEWCOG, taskMonitorRanging(), @senseStack) + 1  ' start TOF Listener
-
-    ' wait  until quit or...
 
     ' Stop Measurements
-    'tofSensor.stopRanging()
+    tofSensor.stopRanging()
 
     repeat  ' halt here for now
 
-PRI taskMonitorRanging()
+PRI taskMonitorRanging(imageWidth) | bDataReady, eDvcStatus, bDataReturned, x, y, WORD samples[8]
 ' TASK: TOF Listener
+
+    tofSensor.enableMyIOToo()   ' enable this COG to do I/O too
+    repeat  ' forever
+        ' wait for sensor to start ranging
+
+        if not tofSensor.isRanging()
+            debug("- ranging not started, waiting...")
+            waitms(5000) ' Small delay between polling (5 sec)
+            next
+
+        ' is ranging, now let's show data every 5 sec
+        ' Poll sensor for new data
+        eDvcStatus, bDataReady := tofSensor.isDataReady()
+        if bDataReady
+            eDvcStatus, bDataReturned := tofSensor.getRangingData()     ' Read distance data into array
+            if bDataReturned
+                ' The ST library returns the data transposed from zone mapping shown in datasheet
+                ' Pretty-print data with increasing y, decreasing x to reflect reality
+                'for (int y = 0 ; y <= imageWidth * (imageWidth - 1) ; y += imageWidth)
+                repeat y from 0 to imageWidth - 1
+                    'for (int x = imageWidth - 1 ; x >= 0 ; x--)
+                    repeat x from imageWidth -1 to 0 step -1
+                        samples[x] := tofSensor.sampleDistanceMM((y * imageWidth) + x)
+                    debug("- ", udec(y), ": ", udec_word_array_(@samples, 8))
+                debug(" ")
+
+        if not tofSensor.isRanging()
+            ' sensor stopped ranging quit to wait until it starts again
+            quit
+        waitms(5000) ' Small delay between polling (5 sec)
+
 
 CON { ------ PRIVATE (Utility) Methods ------ }
 
 
-PRI locateSensor() : ok | deviceFound
+PRI locateSensor() : ok | bDevicePresent, addrFound
     ' find and configure our mpu9dof device
     debug(`demoLog 'Setup...' 10)
-    deviceFound := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
-
-    debug(`demoLog 'ID device address...' 10)
-    deviceFound := tofSensor.deviceID()
-    ok := true
-    if(deviceFound <> tofSensor.DVC_NOT_FOUND)
-        debug(`demoLog 'Found Addr-`(deviceFound - 1)' 10)
-    else
-        debug(`demoLog 'ERROR: Found no devices' 10)
-        ok := false
+    tofSensor.enableDebug(TRUE)
+    bDevicePresent := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
+    if bDevicePresent
+        debug(`demoLog 'ID device address...' 10)
+        addrFound := tofSensor.getI2CAddress()
+        ok := true
+        if(addrFound <> tofSensor.DVC_NOT_FOUND)
+            debug(`demoLog 'Found Addr-`(addrFound)' 10)
+        else
+            debug(`demoLog 'ERROR: Found no devices' 10)
+            ok := false
 
 DAT { misc messages }
 

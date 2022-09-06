@@ -129,6 +129,8 @@ VAR { Instance Variables - Global }
     LONG    dvcI2CAddr
 
     BYTE    bShowDebug
+    BYTE    bShowIODebug
+    BYTE    bSensorActive       ' T/F where T means sensor ranging is active
 
 CON { driver Settings }
 
@@ -139,6 +141,8 @@ CON { driver Settings }
     VL53L5CX_I2C_ADDR_0      = $52
     VL53L5CX_I2C_ADDR_1      = $54
 
+CON ' --- Driver Setup ---
+
 PUB enableDebug(bEnable)
 '' Turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object)
     bShowDebug := bEnable
@@ -147,36 +151,35 @@ PUB enableDebug(bEnable)
     else
         'debug(`snsLog 10 '* DBG off' 10)
 
-PUB init(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)
-'' Initialize the output pins (quiet the device so we can trigger LA)
-    'debug(`term snsLog pos 500 30 size 50 14 textsize 12 color green)
-
-    bDidCalibrate := FALSE ' initially we say the device is NOT calibrated
-    bShowDebug := FALSE
-
-    bPinsSetUp := setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)  ' configure pin numbers if not already
-    if bPinsSetUp
-        floatPins()
-        ' have the driver force its own pins quiet
-        'i2c_bus.quiesce(pin_scl, pin_sda, PULL_UP_VL53L5CX_I2C)
-
-PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent
+PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | eDvcStatus, bIsAlive
 '' Start the device running
-    bDidCalibrate := FALSE ' initially we say the device is NOT calibrated
-    bShowDebug := FALSE
+    bDidCalibrate := FALSE  ' initially we say the device is NOT calibrated
+    bShowDebug := FALSE     ' no, not til requested
+    bShowIODebug := FALSE   ' no, not til requested
+    bSensorActive := FALSE  ' no, not initially
 
     bPinsSetUp := setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)  ' configure pin numbers if not already
     if bPinsSetUp
         i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
         bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
-        if bShowDebug
-            'debug(`snsLog '* Started' 10)
         if bDeviceFound
-            isAlive()
+            eDvcStatus, bIsAlive := isAlive()
+            if eDvcStatus == VL53L5CX_STATUS_OK and bIsAlive
+                ' turn off: vl53l5cx_off()
+                ' turn on: vl53l5cx_on()
+                initDriver()    ' extended so we can do run-time config of driver
 
-PUB deviceID() : eDevice
-'' Return indication (enum value) of if and which device we found on i2c bus
-    eDevice := dvcI2CAddr
+                ' init device: vl53l5cx_init()
+                '   return VL53L5CX_STATUS_ERROR if failed to init
+                ' return VL53L5CX_STATUS_OK
+                eDvcStatus := vl53l5cxInit()
+                if eDvcStatus <> VL53L5CX_STATUS_OK
+                    bDevicePresent := FALSE
+            else
+                bDevicePresent := FALSE
+
+        if bShowDebug and bDevicePresent
+            debug("VL53: Started")
 
 PUB stop()
 '' Stop our i2c bus use and float all pins
@@ -187,25 +190,30 @@ PUB stop()
         if bShowDebug
             debug(`snsLog '* Stopped' 10)
 '}
-PUB begin() : bIsAlive | eDvcStatus
-'' yep, exrtacted from example code, ready our TOF Sensor
-    'pinl(pin_rst)    ' de-assert
-    'pinl(pin_lpn)    ' de-assert
 
-    ' now let's do real code...
-    eDvcStatus, bIsAlive := isAlive()
+PUB enableMyIOToo() | pScl, pSda, pnInt, pRst, pLpn, pPwren  ' whoa pInt collides with internal var?!
+'' allow new cog to do I/O's too
+    debug("VL53: I/O Access Setup")
+    pScl :=  pin_scl  ' copy pins to pasm acccesible location
+    pSda :=  pin_sda  ' copy pins to pasm acccesible location
+    pnInt :=  pin_int  ' copy pins to pasm acccesible location
+    pRst :=  pin_rst  ' copy pins to pasm acccesible location
+    pLpn :=  pin_lpn  ' copy pins to pasm acccesible location
+    pPwren :=  pin_pwren  ' copy pins to pasm acccesible location
+    org
+    dirh    pScl    ' set to output
+    dirh    pSda
+    dirh    pRst
+    dirh    pLpn
+    dirh    pPwren
+    dirl    pnInt    ' set to input
+    end
 
-    if eDvcStatus == VL53L5CX_STATUS_OK and bIsAlive
-        ' turn off: vl53l5cx_off()
-        ' turn on: vl53l5cx_on()
-        initDriver()    ' extended so we can do run-time config of driver
+CON ' --- VL53L5CX PUBLIC interface ---
 
-        ' init device: vl53l5cx_init()
-        '   return VL53L5CX_STATUS_ERROR if failed to init
-        ' return VL53L5CX_STATUS_OK
-        eDvcStatus := vl53l5cx_init()
-        if eDvcStatus <> VL53L5CX_STATUS_OK
-            bIsAlive := FALSE
+PUB deviceID() : eDevice
+'' Return indication (enum value) of if and which device we found on i2c bus
+    eDevice := dvcI2CAddr
 
 PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTempStatusNotOK
 '' Return T/F where T means the device was found on the i2c bus
@@ -228,15 +236,20 @@ PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTe
         else
             debug("TOF: chip detect: BAD ID from chip!")
 
+PUB isRanging() : bSensorRanging
+'' Return T/F where T means the sensor is actively ranging
+    bSensorRanging := bSensorActive
+
 PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
-'' Reconfigure devcie to respond to new i2c device address
+'' Reconfigure device to respond to new i2c device address
+''  Returns VL53L5CX_STATUS_OK if the sensor's address was correctly changed or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
 
     bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)    ' |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
     bStatusNotOK |= writeByte(VL53L5CX_REG_DVC_ADDR, i2cAddress >> 1 & $ff)     ' |= WrByte(&(p_dev->platform), 0x4, (uint8_t)(i2c_address >> 1))
 
     if not bStatusNotOK ' if status IS ok!
-        dvcI2CAddr := i2cAddress >> 1
+        dvcI2CAddr := i2cAddress
 
     bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)       ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
@@ -244,17 +257,22 @@ PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB getI2CAddress() : nDvcI2CAddr
-'' Return the current i2c device address
-    nDvcI2CAddr := dvcI2CAddr << 1
+'' Return the current i2c device address (or DVC_NOT_FOUND if no device found on i2c bus)
+    nDvcI2CAddr := dvcI2CAddr
 
 PUB setRangingFrequency(newFrequency8)
 '' NOT IMPLEMENTED YET
+'' Returns true if the sensor's sampling frequency was changed accordingly or false otherwise.
+'' If this function returns false an error entry will be stored in the lastError struct.
 
 PUB getRangingFrequency()
 '' NOT IMPLEMENTED YET
+'' Returns current ranging frequency.
+'' If this function returns 0 an error entry will be stored in the lastError struct.
 
 PUB setRangingMode(eRangingMode) : eDvcStatus | single_range, bStatusNotOK
-'' Configure sensor for selected ranging mode
+'' Configure sensor ranging mode
+''  Returns VL53L5CX_STATUS_OK if the sensor's ranging mode was changed or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
     single_range := 0
 
@@ -280,7 +298,7 @@ PUB setRangingMode(eRangingMode) : eDvcStatus | single_range, bStatusNotOK
         ' status |= vl53l5cx_dci_write_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, (uint16_t)8)
         bStatusNotOK |= writeBytes(VL53L5CX_DCI_RANGING_MODE, @tempBuffer, 8)
         ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-        single_range := valueToDevice(single_range)
+        single_range := longFmDeviceValue(single_range)
         bStatusNotOK |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)
 
         if bStatusNotOK
@@ -288,7 +306,8 @@ PUB setRangingMode(eRangingMode) : eDvcStatus | single_range, bStatusNotOK
 
 
 PUB getRangingMode() : eDvcStatus, eRangingMode | bStatusNotOK
-'' Return the sensors' configured ranging mode
+'' Return the sensors' current ranging mode if eDvcStatus is VL53L5CX_STATUS_OK
+''  Returns eDvcStatus of VL53L5CX_STATUS_ERROR if communications failure
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
@@ -304,9 +323,13 @@ PUB getRangingMode() : eDvcStatus, eRangingMode | bStatusNotOK
 
 
 PUB setResolution(eResolution) : eDvcStatus | bStatusNotOK
-'' Set the sensors' resolution
+'' Set the sensors' resolution to [VL53L5CX_RESOLUTION_4X4, or VL53L5CX_RESOLUTION_8X8]
+''  Returns VL53L5CX_STATUS_OK if the sensor's ranging resolution was changed or
+''  VL53L5CX_STATUS_INVALID_PARAM if not one of two expected values or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
     bStatusNotOK := 0                   ' initially, we are OK
+
+    debug("VL53: Setresolution")
 
     case (eResolution)
         VL53L5CX_RESOLUTION_4X4:
@@ -348,23 +371,24 @@ PUB setResolution(eResolution) : eDvcStatus | bStatusNotOK
         other:
             eDvcStatus := VL53L5CX_STATUS_INVALID_PARAM
 
-    ' bStatusNotOK |= _vl53l5cx_send_offset_data(p_dev, eResolution)
-    bStatusNotOK |= sendOffsetData(eResolution, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
-    'bStatusNotOK |= _vl53l5cx_send_xtalk_data(p_dev, eResolution)
-    bStatusNotOK |= sendXtalkData(eResolution, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+    if eDvcStatus <> VL53L5CX_STATUS_INVALID_PARAM
+        ' bStatusNotOK |= _vl53l5cx_send_offset_data(p_dev, eResolution)
+        bStatusNotOK |= sendOffsetData(eResolution)
+        'bStatusNotOK |= _vl53l5cx_send_xtalk_data(p_dev, eResolution)
+        bStatusNotOK |= sendXtalkData(eResolution)
 
     ' don't let _STATUS_INVALID_PARAM be overridden
     if bStatusNotOK and eDvcStatus == VL53L5CX_STATUS_OK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB getResolution() : eDvcStatus, nResolution8 | bStatusNotOK
-'' Return the sensors' currently configured resolution
+'' Return the sensors' currently configured ranging resolution
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_ZONE_CONFIG, 8)
     bStatusNotOK := readBytes(VL53L5CX_DCI_ZONE_CONFIG, @tempBuffer, 8)
 
-    nResolution8 := BYTE[@tempBuffer][$00] * BYTE[@tempBuffer][$01] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
+    nResolution8 := BYTE[@tempBuffer][0] * BYTE[@tempBuffer][1] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
@@ -400,8 +424,11 @@ PUB getWireMaxPacketSize() : eDvcStatus, maxPktSize8 | bStatusNotOK
 '' NOT IMPLEMENTED YET
 
 PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logicalValue32b, bStatusNotOK, idx
-'' Start the TOF sensing!
+'' Tell the sensor to start ranging.
+''  Returns VL53L5CX_STATUS_OK if the start ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
+
+    debug("VL53: Start Ranging")
 
         'init output enables
     long[@output_bh_enable][0] := $00000007  ' Enable mandatory output (meta and common data)
@@ -410,21 +437,21 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     long[@output_bh_enable][3] := $C0000000
 
     ' load output[] buffer data
-    LONG[@output][0] := valueToDevice(startBh)
-    LONG[@output][1] := valueToDevice(metaDataBh)
-    LONG[@output][2] := valueToDevice(commonDataBh)
-    LONG[@output][3] := valueToDevice(ambientRateBh)
-    LONG[@output][4] := valueToDevice(spadCountBh)
-    LONG[@output][5] := valueToDevice(nbTargetDetectedBh)
-    LONG[@output][6] := valueToDevice(signalRateBh)
-    LONG[@output][7] := valueToDevice(rangeSigmaMMBh)
-    LONG[@output][8] := valueToDevice(distanceBh)
-    LONG[@output][9] := valueToDevice(reflectanceBh)
-    LONG[@output][10] := valueToDevice(targetStatusBh)
-    LONG[@output][11] := valueToDevice(motionDetectBh)
+    LONG[@output][0] := longFmDeviceValue(startBh)
+    LONG[@output][1] := longFmDeviceValue(metaDataBh)
+    LONG[@output][2] := longFmDeviceValue(commonDataBh)
+    LONG[@output][3] := longFmDeviceValue(ambientRateBh)
+    LONG[@output][4] := longFmDeviceValue(spadCountBh)
+    LONG[@output][5] := longFmDeviceValue(nbTargetDetectedBh)
+    LONG[@output][6] := longFmDeviceValue(signalRateBh)
+    LONG[@output][7] := longFmDeviceValue(rangeSigmaMMBh)
+    LONG[@output][8] := longFmDeviceValue(distanceBh)
+    LONG[@output][9] := longFmDeviceValue(reflectanceBh)
+    LONG[@output][10] := longFmDeviceValue(targetStatusBh)
+    LONG[@output][11] := longFmDeviceValue(motionDetectBh)
 
-    eDvcStatus, nResolution8 := getResolution()   ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
-    streamcount := 255   ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
+    eDvcStatus, nResolution8 := getResolution()     ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
+    streamcount := 255                              ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
 
     ' Enable/Disable selected outputs in the DAT { start ranging data } section
     '  (set bit for each section enabled)
@@ -495,15 +522,15 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     bStatusNotOK := writeBytes(VL53L5CX_DCI_OUTPUT_LIST, @output, output_len)
 
     'init our header
-    LONG[@header_config][0] := valueToDevice(dataReadSize)
-    LONG[@header_config][1] := valueToDevice(i + 1)
+    LONG[@header_config][0] := longFmDeviceValue(dataReadSize)
+    LONG[@header_config][1] := longFmDeviceValue(i + 1)
 
     'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(header_config), VL53L5CX_DCI_OUTPUT_CONFIG, (uint16_t)sizeof(header_config))
     bStatusNotOK |= writeBytes(VL53L5CX_DCI_OUTPUT_CONFIG, @header_config, header_config_len)
 
     'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output_bh_enable), VL53L5CX_DCI_OUTPUT_ENABLES, (uint16_t)sizeof(output_bh_enable))
     repeat idx from 0 to 4 - 1
-        long[@output_bh_enable][idx] := valueToDevice(long[@output_bh_enable][idx])
+        long[@output_bh_enable][idx] := longFmDeviceValue(long[@output_bh_enable][idx])
 
     bStatusNotOK |= writeBytes(VL53L5CX_DCI_OUTPUT_ENABLES, @output_bh_enable, output_bh_en_len)
 
@@ -516,20 +543,26 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     'status |= WrMulti(&(p_dev->platform), VL53L5CX_UI_CMD_END - (uint16_t)(4 - 1), (uint8_t *)cmd, sizeof(cmd))
     bStatusNotOK |= writeBytes(VL53L5CX_UI_CMD_END - (4 - 1), @cmd, cmd_len)
     'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
+    else
+        bSensorActive := TRUE
 
 PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK, bStatusNotOK
-'' Stop TOF sensing!
+'' Tell Sensor to stop ranging.
+''  Returns VL53L5CX_STATUS_OK if the stop ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
+    bSensorActive := FALSE
+
+    debug("VL53: Stop Ranging")
 
     ' status |= RdMulti(&(p_dev->platform), 0x2FFC, (uint8_t *)&auto_stop_flag, 4)
     bStatusNotOK := readBytes($2FFC, @auto_stop_flag, 4)
     debug("CHP: ", uhex_long(auto_stop_flag), uhex_byte_array(@auto_stop_flag, 4))
 
-    if (valueFmDevice(auto_stop_flag) <> $4FF)
+    if (longFmDeviceValue(auto_stop_flag) <> $4FF)
         bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)        ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
 
         ' Provoke MCU stop
@@ -562,9 +595,8 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB isDataReady() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dataReady
-'' Return T/F where T means data is ready!
+'' Return T/F where T means data is ready
     eDvcStatus := VL53L5CX_STATUS_OK
-    bDataReady := FALSE
 
     ' status |= RdMulti(&(p_dev->platform), 0x0, p_dev->temp_buffer, 4)
     bStatusNotOK := readBytes($0000, @tempBffr, 4)
@@ -582,15 +614,20 @@ PUB isDataReady() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dataReady
     else
         '*p_isReady = 0
         dataReady := 0
-    if not bStatusNotOK ' is status ok?! (yeah, double negative!)
-        bDataReady := dataReady <> 0 ? TRUE : FALSE
+
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+
+    bDataReady := (dataReady <> 0 and eDvcStatus == VL53L5CX_STATUS_OK) ? TRUE : FALSE
 
 
-PUB getRangingData(pRangingData) : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bhType, bhIdx, bhSize
+PUB getRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bhType, bhIdx, bhSize
 '' Retrieve the sense data from the sensor
+    ' Returns true if the ranging data was read from the sensor or false otherwise.
+    ' Data will be stored in the VL53L5CX_ResultsData struct passed as a pointer.
+    ' If this function returns false an error entry will be stored in the lastError struct.
+
     'uint8_t result = vl53l5cx_get_ranging_data(Dev, pRangingData)
-    if not bStatusNotOK ' is status ok?! (yeah, double negative!)
-        bDataReturned := TRUE
 
     eDvcStatus := VL53L5CX_STATUS_OK
     'union Block_header *bh_ptr
@@ -602,7 +639,7 @@ PUB getRangingData(pRangingData) : eDvcStatus, bDataReturned | bStatusNotOK, i, 
     streamcount := BYTE[@tempBuffer][0]
 
     'SwapBuffer(p_dev->temp_buffer, (uint16_t)p_dev->data_read_size)
-    SwapBuffer(@tempBuffer, dataReadSize)
+    convertByteOrder(@tempBuffer, dataReadSize)
 
     ' Start conversion at position 16 to avoid headers
     'for (i = (uint32_t)16 i < (uint32_t)p_dev->data_read_size i += (uint32_t)4)
@@ -623,13 +660,13 @@ PUB getRangingData(pRangingData) : eDvcStatus, bDataReturned | bStatusNotOK, i, 
                 if ambientPerSpad
                     ' (void)memcpy(p_results->ambient_per_spad, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize)
-                    longConvertFromDevice(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longMoveDeviceValues(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
 
             spadCountIdx:
                 if nbSpadsEnabled
                     '(void)memcpy(p_results->nb_spads_enabled, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize)
-                    longConvertFromDevice(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longMoveDeviceValues(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize / 4)
 
             nbTargetDetectIdx:
                 if nbTargetDetected
@@ -640,19 +677,19 @@ PUB getRangingData(pRangingData) : eDvcStatus, bDataReturned | bStatusNotOK, i, 
                 if signalPerSpad
                     '(void)memcpy(p_results->signal_per_spad, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize)
-                    longConvertFromDevice(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longMoveDeviceValues(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
 
             rangeSigmaMMIdx:
                 if rangeSigmaMM
                     '(void)memcpy(p_results->range_sigma_mm, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize)
-                    wordConvertFromDevice(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
+                    wordMoveDeviceValues(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
 
             distanceIdx:
                 if distanceMM
                     '(void)memcpy(p_results->distance_mm, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize)
-                    wordConvertFromDevice(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
+                    wordMoveDeviceValues(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
 
             reflectancePrcntIdx:
                 if reflectancePrcnt
@@ -680,10 +717,10 @@ PUB getRangingData(pRangingData) : eDvcStatus, bDataReturned | bStatusNotOK, i, 
                             LONG    rsltMotionValue32[32]
                     }
                     ' just rewrite the byte orders in place...
-                    global_indicator_1 := valueFmDevice(global_indicator_1)
-                    global_indicator_2 := valueFmDevice(global_indicator_2)
+                    global_indicator_1 := longFmDeviceValue(global_indicator_1)
+                    global_indicator_2 := longFmDeviceValue(global_indicator_2)
                     repeat i from 0 to VL53L5CX_NBR_MOTION_ENTRIES - 1
-                        LONG[@rsltMotionValue32][i] := valueFmDevice(LONG[@rsltMotionValue32][i])
+                        LONG[@rsltMotionValue32][i] := longFmDeviceValue(LONG[@rsltMotionValue32][i])
 
             other:
                 ' nothing to do here
@@ -737,6 +774,8 @@ PUB getRangingData(pRangingData) : eDvcStatus, bDataReturned | bStatusNotOK, i, 
                 'p_results->motion_indicator.motion[i] /= (uint32_t)65535
                 LONG[@rsltMotionValue32][i] /= 65535
 
+    if not bStatusNotOK ' is status ok?! (yeah, double negative!)
+        bDataReturned := TRUE
 
 PUB didInterrupt() : bPinState | rawPin
 '' Return interpreted value of Interrupt pin where 1 = TRUE (did interrupt), 0 = FALSE (did not)
@@ -824,22 +863,22 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
     eDevice := DVC_NOT_FOUND
     if(!bFoundAddr0 and bFoundAddr1)
         eDevice := DVC_ADDR1
-        dvcI2CAddr := VL53L5CX_I2C_ADDR_1 >> 1
+        dvcI2CAddr := VL53L5CX_I2C_ADDR_1
     elseif(bFoundAddr0 and !bFoundAddr1)
         eDevice := DVC_ADDR0
-        dvcI2CAddr := VL53L5CX_I2C_ADDR_0 >> 1
-{
+        dvcI2CAddr := VL53L5CX_I2C_ADDR_0
+
     if (bFoundAddr0 or bFoundAddr1)
         if bShowDebug
-            debug(`snsLog ' * idDevice() found Addr`(dvcI2CAddr - 1)' 10)
+            debug("VL53: idDevice() found Addr: ", uhex_byte(idDevice()))
     else
-        if bShowDebug
-            debug("* idDevice() NOT found")
-'}
+        debug("* idDevice() NOT found")
 
-PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempStatusNotOK, tmp
+PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempStatusNotOK, tmp
 
     eDvcStatus := VL53L5CX_STATUS_OK
+
+    debug("VL53: Init")
 
     ' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TGT_PER_ZONE, 0x00, 0x01, 0x00}
     pipe_ctrl.byte[0] := VL53L5CX_NB_TGT_PER_ZONE
@@ -947,6 +986,7 @@ PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempS
     debug(">>  CHECK: VL53L5CX_FIRMWARE_LEN = ", udec_(VL53L5CX_FIRMWARE_LEN))
 
     ' Get offset NVM data and store them into the offset buffer
+
     'status |= WrMulti(&(p_dev->platform), 0x2fd8, (uint8_t *)VL53L5CX_GET_NVM_CMD, sizeof(VL53L5CX_GET_NVM_CMD))
     bStatusNotOK |= writeBytes($2fd8, @VL53L5CX_GET_NVM_CMD, VL53L5CX_GET_NVM_CMD_LEN)
 
@@ -956,23 +996,28 @@ PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempS
     ' status |= RdMulti(&(p_dev->platform), VL53L5CX_UI_CMD_START, p_dev->temp_buffer, VL53L5CX_NVM_DATA_SIZE)
     bStatusNotOK |= readBytes(VL53L5CX_UI_CMD_START, @tempBuffer, VL53L5CX_NVM_DATA_SIZE)
 
-
     ' (void)memcpy(p_dev->offset_data, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    ' preserve master copy of Offset 8x8 buffer
     BYTEMOVE(@ofsTempBuffer, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
-    bStatusNotOK |= sendOffsetData(VL53L5CX_RESOLUTION_4X4, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    ' 	status |= _vl53l5cx_send_offset_data(p_dev, VL53L5CX_RESOLUTION_4X4);
+    bStatusNotOK |= sendOffsetData(VL53L5CX_RESOLUTION_4X4)
 
     ' Set default Xtalk shape. Send Xtalk to sensor
-    ' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
-    ' NOTE: the following copies the default into place... -> xtalk_data buffer
-    bStatusNotOK |= sendXtalkData(VL53L5CX_RESOLUTION_4X4, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
 
+    ' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+    ' preserve master copy of Xtalk 8x8 buffer
+    BYTEMOVE(@xtalkTempBuffer, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+    ' NOTE: the following copies the default into place... -> xtalk_data buffer
+    ' status |= _vl53l5cx_send_xtalk_data(p_dev, VL53L5CX_RESOLUTION_4X4);
+    bStatusNotOK |= sendXtalkData(VL53L5CX_RESOLUTION_4X4)
 
     ' Send default configuration to VL53L5CX firmware
+
     ' status |= WrMulti(&(p_dev->platform), 0x2c34, (uint8_t *)VL53L5CX_DEFAULT_CONFIGURATION, sizeof(VL53L5CX_DEFAULT_CONFIGURATION))
     bStatusNotOK |= writeBytes($2c34, @VL53L5CX_DEFAULT_CONFIGURATION, VL53L5CX_DEFAULT_CONFIG_LEN)
 
     ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
-    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, 3)
+    bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
     ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
     bStatusNotOK |= writeBytes(VL53L5CX_DCI_PIPE_CONTROL, @pipe_ctrl, 4)
@@ -982,7 +1027,7 @@ PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempS
         bStatusNotOK |= dciReplaceData(@tempBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp.byte[0], 1, $0C)
 
     ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-    single_range := valueToDevice(single_range)
+    single_range := longFmDeviceValue(single_range) ' sigh yep, this call undoes it too!
     bStatusNotOK |= writeBytes(VL53L5CX_DCI_SINGLE_RANGE, @single_range, 4)   ' write 32-bit value
 
     if bStatusNotOK
@@ -998,25 +1043,16 @@ PRI vl53l5cx_init() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempS
 ' Expect Value of:    $4B $23 $A1 $95
 '
 ' ---------------------------------------------------------
-PRI valueFmDevice(nDeviceOrderedValue) : logicalValue32b
+PRI longFmDeviceValue(nDeviceOrderedValue) : logicalValue32b
 ' convert LONG from device to logical order
 
     logicalValue32b.byte[0] := nDeviceOrderedValue.byte[3]
     logicalValue32b.byte[1] := nDeviceOrderedValue.byte[2]
     logicalValue32b.byte[2] := nDeviceOrderedValue.byte[1]
     logicalValue32b.byte[3] := nDeviceOrderedValue.byte[0]
-    'debug("valueFmDevice(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
+    'debug("longFmDeviceValue(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
 
-PRI valueToDevice(logicalValue32b) : nDeviceOrderedValue
-' convert LONG from logical to device order
-
-    nDeviceOrderedValue.byte[0] := logicalValue32b.byte[3]
-    nDeviceOrderedValue.byte[1] := logicalValue32b.byte[2]
-    nDeviceOrderedValue.byte[2] := logicalValue32b.byte[1]
-    nDeviceOrderedValue.byte[3] := logicalValue32b.byte[0]
-    'debug("valueToDevice(", uhex_long_(logicalValue32b), ") returns ", uhex_long_(nDeviceOrderedValue))
-
-PRI wordConvertFromDevice(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
+PRI wordMoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
 ' copy device words to destination but converting their byte order enroute
     repeat wdIdx from 0 to wordCount - 1
         dvcWord := WORD[pDestWords][wdIdx]
@@ -1024,10 +1060,10 @@ PRI wordConvertFromDevice(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logica
         logicalWord.byte[1] := dvcWord.byte[0]
         WORD[pDestWords][wdIdx] := logicalWord
 
-PRI longConvertFromDevice(pDestLongs, pDvcLongs, longCount) | longIdx
+PRI longMoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx
 ' copy device words to destination but converting their byte order enroute
     repeat longIdx from 0 to longCount - 1
-        WORD[pDestLongs][longIdx] := valueFmDevice(WORD[pDvcLongs][longIdx])
+        WORD[pDestLongs][longIdx] := longFmDeviceValue(WORD[pDvcLongs][longIdx])
 
 PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
     ' NOTE: union interp:
@@ -1139,8 +1175,8 @@ CON { fixed driver values }
 CON { driver sizes }
 
     OVERALL_BUFFER_SIZE_BYTES = (VL53L5CX_XTALK_BUFFER_SIZE > VL53L5CX_OFFSET_BUFFER_SIZE) ? VL53L5CX_XTALK_BUFFER_SIZE : VL53L5CX_OFFSET_BUFFER_SIZE
-    SIGNAL_GRID_SIZE_BYTES = 64
-    RANGE_GRID_SIZE_BYTES = 64
+    SIGNAL_GRID_SIZE_LONGS = 64
+    RANGE_GRID_SIZE_WORDS = 64
 
     VL53L5CX_NBR_MOTION_ENTRIES = 32
 
@@ -1243,18 +1279,22 @@ VAR { driver uninitialized data }
 ' -----------------------------------
 
 ' -----------------------------------
- ' Structure VL53L5CX_ResultsData contains the ranging results of VL53L5CX.
- '  If user wants more than 1 target per zone, the results can be split
- '  into 2 sub-groups:
+' send read: RESULT DATA
+' -----------------------------------
+' This contains the ranging results of VL53L5CX.
+'  If user wants more than 1 target per zone, the results can be split
+'  into 2 sub-groups:
+'
+' - Per zone results. These results are common to all targets (rsltAmbientPerSpad32,
+'    nb_target_detected and nb_spads_enabled).
+'
+' - Per target results : These results are different relative to the detected
+'    target (signal_per_spad, range_sigma_mm, distance_mm, reflectance,
+'    target_status).
 
- ' - Per zone results. These results are common to all targets (rsltAmbientPerSpad32,
- '    nb_target_detected and nb_spads_enabled).
 
- ' - Per target results : These results are different relative to the detected
- '    target (signal_per_spad, range_sigma_mm, distance_mm, reflectance,
- '    target_status).
-
- ' - Per zone results:
+'  Per zone results:
+'  ------------------
     '  Ambiant noise in kcps/spads
     LONG    rsltAmbientPerSpad32[VL53L5CX_RESOLUTION_8X8]
 
@@ -1264,7 +1304,8 @@ VAR { driver uninitialized data }
     '  Number of valid target detected for 1 zone
     BYTE    rsltNbTgtDetected8[VL53L5CX_RESOLUTION_8X8]
 
-' - Per target results:
+'  Per target results:
+'  -------------------
     '  Signal returned to the sensor in kcps/spads
     LONG    rsltSignalPerSpad32[VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE]
 
@@ -1280,7 +1321,8 @@ VAR { driver uninitialized data }
     '  Status indicating the measurement validity (5 & 9 means ranging OK)
     BYTE    rsltTargetStatus8[VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE]
 
-    '  Motion detector results
+'  Motion detector results
+'  -----------------------
     '    struct {
     rsltMotionIndicatorStruct
         LONG    global_indicator_1
@@ -1291,8 +1333,16 @@ VAR { driver uninitialized data }
         BYTE    spare
         LONG    rsltMotionValue32[VL53L5CX_NBR_MOTION_ENTRIES]
     '    } motion_indicator
+' -----------------------------------
 
-
+PUB sampleDistanceMM(index) : nValue16 | validIndex
+'' Return DistanceMM[{index}] value
+'' NOTE {index} will be coerced into legal value
+''  but if so debug message will be emitted
+    validIndex := 0 #> index <# (VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1
+    if validIndex <> index
+        debug("sampleDistanceMM(", udec(index), ": index out of range 0-", udec((VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1))
+    nValue16 := rsltDistanceMM16[validIndex]
 
 CON '  --- Device Literals for register load ---
 
@@ -1354,7 +1404,7 @@ PRI initDriver()
 ' initialize our variables based upon number targets / zone compile value
 ' this is our new driver RUN-TIME configuration (was compile-time in example drivers)
 
-    ' initialize length which reside in VAR space (so they can't be done at compile time)
+    ' initialize lengths which reside in VAR space (since they can't be done at compile time)
     output_len                  := @output_end - @output                   ' number of output[] bytes
     output_bh_en_len            := @output_bh_en_end - @output_bh_enable   ' number of output_bh_enable[] bytes
     header_config_len           := @header_config_end - @header_config     ' number of header_config[] bytes
@@ -1446,8 +1496,8 @@ PRI initDriver()
         debug("initDriver() ERROR need buffer: ", udec_(maxResultsSize), ", which exceeds allocated: ", udec_(VL53L5CX_TEMP_BUFFER_SIZE))
 
 
-PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : eDvcStatus | timeout, bStatusNotOK, bTimedOut, bFaulted, fwErrByte
-    DEBUG("pollForAnswer() ", udec_byte(size8), udec_byte(posn8), uhex_word(addr16), uhex_byte(mask8), uhex_byte(expectedValue8))
+PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout, bStatusNotOK, bTimedOut, bFaulted, fwErrByte
+    DEBUG("  pollForAnswer() ", udec_byte(size8), udec_byte(posn8), uhex_word(addr16), uhex_byte(mask8), uhex_byte(expected8))
     timeout := 0
     bTimedOut := FALSE
     bFaulted := FALSE
@@ -1456,7 +1506,7 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : eDvcStatus | ti
     eDvcStatus := VL53L5CX_STATUS_OK
 
     if posn8 >= size8
-        DEBUG("pollForAnswer() ERROR bad posn vs. size: ", udec_byte(size8), udec_byte(posn8))
+        DEBUG("  -- pollForAnswer() ERROR bad PARAM! posn vs. size: ", udec_byte(size8), udec_byte(posn8))
 
     repeat
         'status |= RdMulti(&(p_dev->platform), addr16, p_dev->temp_buffer, size8)
@@ -1482,7 +1532,7 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : eDvcStatus | ti
             debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@tempBuffer, size8))
             quit
 
-        if ((BYTE[@tempBuffer][posn8] & mask8) == expectedValue8)
+        if ((BYTE[@tempBuffer][posn8] & mask8) == expected8)
             quit
 
         timeout++
@@ -1494,56 +1544,85 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expectedValue8) : eDvcStatus | ti
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
     if eDvcStatus <> VL53L5CX_STATUS_OK and not bTimedOut
-        debug("  - ERROR: read fault  ", uhex_byte(eDvcStatus), uhex_byte(bStatusNotOK), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expectedValue8), "]")
+        debug("  - ERROR: read fault  ", uhex_byte(eDvcStatus), uhex_byte(bStatusNotOK), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expected8), "]")
     elseif not bTimedOut and not bFaulted
-        debug("  - FOUND it!  ", uhex_byte(eDvcStatus), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expectedValue8), "]")
+        debug("  - FOUND it!  ", uhex_byte(eDvcStatus), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expected8), "]")
 
 
-PRI sendOffsetData(eResolution, pSourceBytes, nLenSourceBytes) : eDvcStatus | j, i, k, bStatusNotOK
+PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, idx8x8
 ' Inner function, not available outside this file. This function is used
 '  to set the offset data gathered from NVM.
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    BYTEMOVE(@ofsTempBuffer, pSourceBytes, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
+    debug("VL53: Send OFFSET Data")
+
+    ' get copy of Offset-Buffer 8x8 image
+    BYTEMOVE(@tempBuffer, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
 
     ' Data extrapolation is required for 4X4 offset
     if eResolution == VL53L5CX_RESOLUTION_4X4
-        BYTEMOVE(@BYTE[@ofsTempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
-        ' convert tempBuffer into device byte-order
-        swapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        BYTEMOVE(@BYTE[@tempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
+        ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t or LONGs)
+        convertByteOrder(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
         ' extract signal grid
-        BYTEMOVE(@signal_grid, @BYTE[@ofsTempBuffer][$3c], SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
+        LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$3c], SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
+        debug("VL53: signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
         ' extract range grid
-        BYTEMOVE(@range_grid, @BYTE[@ofsTempBuffer][$140], RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(range_grid, &(p_dev->temp_buffer[0x140]), sizeof(range_grid))
+        WORDMOVE(@rangeGrid16, @BYTE[@tempBuffer][$140], RANGE_GRID_SIZE_WORDS)   ' (void)memcpy(range_grid, &(p_dev->temp_buffer[0x140]), sizeof(range_grid))
+        debug("VL53: rangeGrid16(", udec(RANGE_GRID_SIZE_WORDS), ") ", uhex_word_array(@rangeGrid16, RANGE_GRID_SIZE_WORDS))
 
+        'FIXME: verify this code and fix in both places!
         repeat j from 0 to 4 - 1                                                    ' for (j = 0 j < (int8_t)4 j++)
             repeat i from 0 to 4 - 1                                                ' for (i = 0 i < (int8_t)4 i++)
-                BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
-                BYTE[@range_grid][i + (4 * j)] := (BYTE[@range_grid][(2 * i) + (16 * j)] + BYTE[@range_grid][(2 * i) + (16 * j) + 1] + BYTE[@range_grid][(2 * i) + (16 * j) + 8] + BYTE[@range_grid][(2 * i) + (16 * j) + 9]) / 4
+                idx4x4 := i + (4 * j)
+                idx8x8 := (2 * i) + (16 * j)
+                {
+                    ' convert 8x8 into 4x4 using averages?!!
+                    ' average 4 values into 1 ?
+                    LONG[@signal_grid][i + (4 * j)] :=
+                        (LONG[@signal_grid][(2 * i) + (16 * j) + 0] +
+                        LONG[@signal_grid][(2 * i) + (16 * j) + 1] +
+                        LONG[@signal_grid][(2 * i) + (16 * j) + 8] +
+                        LONG[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
 
-        ' clear some spaces within range grid
-        BYTEFILL(@BYTE[@range_grid][$10], 0, 96)                                    ' (void)memset(&range_grid[0x10], 0, (uint16_t)96)
-        ' clear some spaces within signal grid
-        BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
+                    ' convert 8x8 into 4x4 using averages?!!
+                    ' average 4 values into 1 ?
+                    WORD[@range_grid][i + (4 * j)] :=
+                        (WORD[@range_grid][(2 * i) + (16 * j) + 0] +
+                        WORD[@range_grid][(2 * i) + (16 * j) + 1] +
+                        WORD[@range_grid][(2 * i) + (16 * j) + 8] +
+                        WORD[@range_grid][(2 * i) + (16 * j) + 9]) / 4
+                '}
+                ' average 2x2 values (of 8x8) into single value of (4x4)
+                LONG[@signalGrid32][idx4x4] := (LONG[@signalGrid32][idx8x8 + 0] + LONG[@signalGrid32][idx8x8 + 1] + LONG[@signalGrid32][idx8x8 + 8] + LONG[@signalGrid32][idx8x8 + 9]) / 4
+                WORD[@rangeGrid16][idx4x4] := (WORD[@rangeGrid16][idx8x8 + 0] + WORD[@rangeGrid16][idx8x8 + 1] + WORD[@rangeGrid16][idx8x8 + 8] + WORD[@rangeGrid16][idx8x8 + 9]) / 4
+
+        ' clear rangeGrid16 leaving only the new 4x4 values [0-15]
+        WORDFILL(@WORD[@rangeGrid16][16], 0, 48)                                    ' (void)memset(&range_grid[0x10], 0, (uint16_t)96)
+        ' clear signalGrid32 leaving only the new 4x4 values [0-15]
+        LONGFILL(@LONG[@signalGrid32][16], 0, 48)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
+
+        debug("VL53: 2 signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
+        debug("VL53: 2 rangeGrid16(", udec(RANGE_GRID_SIZE_WORDS), ") ", uhex_word_array(@rangeGrid16, RANGE_GRID_SIZE_WORDS))
 
         ' replace signal grid
-        BYTEMOVE(@BYTE[@ofsTempBuffer][$3c], @signal_grid, SIGNAL_GRID_SIZE_BYTES)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
+        LONGMOVE(@BYTE[@tempBuffer][$3c], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
         ' replace range grid
-        BYTEMOVE(@BYTE[@ofsTempBuffer][$140], @range_grid, RANGE_GRID_SIZE_BYTES)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
+        WORDMOVE(@BYTE[@tempBuffer][$140], @rangeGrid16, RANGE_GRID_SIZE_WORDS)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
 
-        ' convert tempBuffer into device byte-order
-        swapBuffer(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        ' convert tempBuffer back into device byte-order - NOTE: yep, this 2nd call reversed out the changes (buffer is known to be an array of uint32_t or LONGs)
+        convertByteOrder(@tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
     ' shift buffer up 8 bytes ?! (removing first 8 bytes, leaving copy of last 8 bytes!)
     '  FIXME: this seems broken as we are moving up 8 but our length is (max - 4) ?? this should be max - 8, right?
     repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                        ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
-        BYTE[@ofsTempBuffer][k] := BYTE[@ofsTempBuffer][k + 8]                      ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
+        BYTE[@tempBuffer][k] := BYTE[@tempBuffer][k + 8]                      ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
 
-    BYTEMOVE(@BYTE[@ofsTempBuffer][$1e0], @footer, 8)                               ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
+    BYTEMOVE(@BYTE[@tempBuffer][$1e0], @footer, 8)                               ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
 
     ' status |= WrMulti(&(p_dev->platform), 0x2e18, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
-    bStatusNotOK := writeBytes($2e18, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    bStatusNotOK := writeBytes($2e18, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
     ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
     bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
@@ -1551,72 +1630,96 @@ PRI sendOffsetData(eResolution, pSourceBytes, nLenSourceBytes) : eDvcStatus | j,
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PRI sendXtalkData(resolution, pSourceBytes, nLenSourceBytes) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
+PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy, idx4x4, idx8x8
 ' Inner function, not available outside this file. This function is used
 '   to set the Xtalk data from generic configuration, or user's calibration.
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    ' use callers length but limited to our target buffer size
-    cntBytesToCopy := nLenSourceBytes
-    if cntBytesToCopy > VL53L5CX_XTALK_BUFFER_SIZE
-        cntBytesToCopy := VL53L5CX_XTALK_BUFFER_SIZE
+    debug("VL53: Send XTALK Data")
 
-    ' if pointing to external buffer...
-    if pSourceBytes <> @xtalkTempBuffer
-        ' copy external buffer to tempBuffer
-        BYTEMOVE(@xtalkTempBuffer, pSourceBytes, VL53L5CX_XTALK_BUFFER_SIZE)    ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
+    ' get copy of Xtalk-Buffer 8x8 image
+    BYTEMOVE(@tempBuffer, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)    ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
 
     ' Data extrapolation is required for 4X4 Xtalk
-    if (resolution == VL53L5CX_RESOLUTION_4X4)
+    if (eResolution == VL53L5CX_RESOLUTION_4X4)
         ' overlay new values into tempBuffer
-        BYTEMOVE(@BYTE[@xtalkTempBuffer][$08], @res4x4, 8)                      ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4, sizeof(res4x4))
-        BYTEMOVE(@BYTE[@xtalkTempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
+        BYTEMOVE(@BYTE[@tempBuffer][$08], @res4x4, 8)                      ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4, sizeof(res4x4))
+        BYTEMOVE(@BYTE[@tempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
 
-        ' convert tempBuffer into device byte-order
-        swapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t's/LONG's)
+        convertByteOrder(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+
         ' extract copy of ordered signal grid
-        BYTEMOVE(@signal_grid, @BYTE[@xtalkTempBuffer][$34], 64)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
+        LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$34], SIGNAL_GRID_SIZE_LONGS)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
+        debug("VL53: signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
 
+        'FIXME: verify this code and fix in both places!
         ' recalculate values within signal grid
         repeat j from 0 to 4 - 1                                                ' for (j = 0 j < (int8_t)4 j++)
             repeat i from 0 to 4 - 1                                            ' for (i = 0 i < (int8_t)4 i++)
-                BYTE[@signal_grid][i + (4 * j)] := (BYTE[@signal_grid][(2 * i) + (16 * j) + 0] + BYTE[@signal_grid][(2 * i) + (16 * j) + 1] + BYTE[@signal_grid][(2 * i) + (16 * j) + 8] + BYTE[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
+                idx4x4 := i + (4 * j)
+                idx8x8 := (2 * i) + (16 * j)
+                {
+                    LONG[@signal_grid][i + (4 * j)] :=
+                    (LONG[@signal_grid][(2 * i) + (16 * j) + 0] +
+                     LONG[@signal_grid][(2 * i) + (16 * j) + 1] +
+                     LONG[@signal_grid][(2 * i) + (16 * j) + 8] +
+                     LONG[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
+                '}
+                LONG[@signalGrid32][idx4x4] := (LONG[@signalGrid32][idx8x8 + 0] + LONG[@signalGrid32][idx8x8 + 1] + LONG[@signalGrid32][idx8x8 + 8] + LONG[@signalGrid32][idx8x8 + 9]) / 4
 
-        ' clear some spaces within signal grid
-        BYTEFILL(@BYTE[@signal_grid][$10], 0, 192)                              ' (void)memset(&signal_grid[0x10], 0, (uint32_t)192)
+        ' clear signalGrid32 leaving only the new 4x4 values [0-15]
+        LONGFILL(@LONG[@signalGrid32][16], 0, 48)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
+
+        debug("VL53: 2 signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
 
         ' copy updated signal grid back into temp buffer
-        BYTEMOVE(@BYTE[@xtalkTempBuffer][$34], @signal_grid, 64)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
+        LONGMOVE(@BYTE[@tempBuffer][$34], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
 
-        ' convert tempBuffer into device byte-order - FIXME: HUH? why doing this again?  Shouldn't only place be here?!!
-        swapBuffer(@xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        ' convert tempBuffer back into device byte-order - NOTE: yep, this 2nd call reversed out the changes (buffer is known to be an array of uint32_t or LONGs)
+        convertByteOrder(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
 
         ' copy profile_4x4 into temp buffer
-        BYTEMOVE(@BYTE[@xtalkTempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
+        BYTEMOVE(@BYTE[@tempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
 
         ' clear 4 bytes within temp buffer
-        BYTEFILL(@BYTE[@xtalkTempBuffer][$078], 0, 4)                           ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
+        BYTEFILL(@BYTE[@tempBuffer][$078], 0, 4)                           ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
 
     ' write temp buffer out to device
     ' status |= WrMulti(&(p_dev->platform), 0x2cf8, p_dev->temp_buffer, VL53L5CX_XTALK_BUFFER_SIZE)
-    bStatusNotOK := writeBytes($2cf8, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+    bStatusNotOK := writeBytes($2cf8, @tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
     ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
     bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PRI swapBuffer(pByteArray, nbrBytes) | tmp, i
+PRI convertByteOrder(pByteArray, nbrBytes) | tmp, i
 ' Inner function, not available outside this file. This function is used
 '  to convert to device required byte order
-        '
-        ' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
-        '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
-        '
-    ' FIXME: verify above reality against code-actual below (correct the code)
-    repeat i from 0 to nbrBytes - 1 step 4                                      ' for (i = 0 i < size i = i + 4)
-        tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
-        LONGFILL(@BYTE[pByteArray][i], tmp, 1)                                  ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
+
+    ' ---------------------------------------
+    ' ARDUINO NOTEs (for my peace of mind ;-)
+    ' ---------------------------------------
+    ' uint32_t      waveHeaderSampleRate = -1;
+    ' waveHeaderSampleRate = (uint32_t)byteBuffer[27] << 24 + (uint32_t)byteBuffer[26] << 16 + (uint32_t)byteBuffer[25] << 8 + byteBuffer[24];
+    '
+    ' waveHeaderSampleRate =
+    '   ((uint32_t)byteBuffer[27] << 24) +
+    '   ((uint32_t)byteBuffer[26] << 16) +
+    '   ((uint32_t)byteBuffer[25] << 8) +
+    '   byteBuffer[24];
+
+    ' ---------------------------------------
+    ' PROPELLER NOTEs
+    ' ---------------------------------------
+    ' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
+    '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
+
+    repeat i from 0 to nbrBytes - 1 step 4                              ' for (i = 0 i < size i = i + 4)
+        'tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
+        ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
+        LONG[@BYTE[pByteArray][i]] := longFmDeviceValue(LONG[@BYTE[pByteArray][i]]) ' yep, this is reversable...
 
 
 PRI dciReplaceData(pDataBffr, register16, dataBffrSize, pNewData, newDataSize, newDataOfst) : eDvcStatus | bStatusNotOK
@@ -1640,7 +1743,7 @@ CON '  ---- Device reads & writes ----
 PRI writeByte(regAddr16, dataValue8) : ok | ackbit
     ' Write {dataValue8} to register {regAddr16}
     i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
+    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
     ackBit := i2c_bus.write(regAddr16.byte[1])
     ok |= ackbit
     ackBit := i2c_bus.write(regAddr16.byte[0])
@@ -1649,16 +1752,18 @@ PRI writeByte(regAddr16, dataValue8) : ok | ackbit
     ok |= ackbit
     i2c_bus.stop()
 
-    'if bShowDebug
-    ' following is more than 10ms...
-    '    term.fstr3(string("* writeByte(0x%.02x)=0x%.02x ok:%d' 10), regAddr16, dataValue8, ok)
+    if ok <> 0
+        debug("writeByte() ERROR ", uhex(ok), uhex_byte(regAddr16))
+    else
+        if bShowIODebug
+            debug(" -wrByt: ", udec(ok), uhex_word(regAddr16), uhex_byte(dataValue8))
 
 
 PRI writeBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAckNak, result8
     ' Write {byteCount} BYTEs from BYTE array located at {pByteStore} -  to {regAddr16}+0, to {regAddr16}+1,
     '  to {regAddr16}+2 and so on
     i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
+    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
     ackBit := i2c_bus.write(regAddr16.byte[1])
     ok |= ackbit
     ackBit := i2c_bus.write(regAddr16.byte[0])
@@ -1669,28 +1774,31 @@ PRI writeBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAc
         ok |= ackbit
     i2c_bus.stop()
 
-    'if bShowDebug
-    ' following is more than 10ms...
-    '    term.fstr3(string("* writeBytes(0x%.02x, ct=%d)=0x%.04x ok:%d' 10), regAddr16, byteCount, pByteStore, ok)
+    if ok <> 0
+        debug("writeBytes() ERROR ", uhex(ok), uhex_word(regAddr16), ", ", uhex_(byteCount), " bytes")
+    else
+        if bShowIODebug
+            debug(" -wrByts: ", udec(ok), uhex_word(regAddr16), ", ", uhex_(byteCount), " bytes")
 
 
 PRI readByte(regAddr16) : ok, result8 | ackbit
     ' Read {result16} from register {regAddr16}
     i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
+    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
     ok |= ackbit := i2c_bus.write(regAddr16.byte[1])
     ok |= ackbit := i2c_bus.write(regAddr16.byte[0])
     i2c_bus.stop()
 '    waitus(1)
     i2c_bus.start()
-    ok |= ackbit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
+    ok |= ackbit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_READ)
     result8 := i2c_bus.read(i2c_bus.NAK)    ' (want NAK and STOP, NOT needed)
     'result8 := i2c_bus.read(i2c_bus.ACK)    ' was NAK (want NAK or STOP)
     i2c_bus.stop()
-    'if bShowDebug
-    '    'debug(`snsLog ' * readByte(0x%.02x) ok:%d, byt=0x%.02x, ret %d' 10), regAddr16, ok, result8, result8)
-    debug(" -rdBy: ", udec(ok), uhex_byte(regAddr16), uhex_byte(result8))
-'    debug("readByte() ", uhex(ok))
+    if ok <> 0
+        debug("readByte() ERROR ", uhex(ok), uhex_word(regAddr16))
+    else
+        if bShowIODebug
+            debug(" -rdByt: ", udec(ok), uhex_word(regAddr16), uhex_byte(result8))
 
 
 PRI readBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAckNak, result8
@@ -1701,31 +1809,30 @@ PRI readBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAck
     'if bShowDebug
     '    term.fstr2(string("* readBytes(0x%.02x, ct=%d)' 10), regAddr16, byteCount)
     i2c_bus.start()
-    ok := ackBit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_WRITE)
+    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
     ok |= ackBit := i2c_bus.write(regAddr16.byte[1])
     ok |= ackbit := i2c_bus.write(regAddr16.byte[0])
     i2c_bus.stop()
 '    waitus(1)
     i2c_bus.start()
-    ok |= ackbit := i2c_bus.write((dvcI2CAddr << 1) | I2C_MODE_READ)
+    ok |= ackbit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_READ)
     repeat byteIndex from 0 to byteCount - 1
         endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
         result8 := i2c_bus.read(endAckNak)    ' use NAK on last and let's use stop
         'result8 := i2c_bus.read(i2c_bus.ACK)    ' was ACK or NAK on last but let's use stop
         result8 := result8 signx 7
         BYTE [pByteStore][byteIndex] := result8
-        'if bShowDebug
-        '    term.fstr5(string(" -- readBytes(0x%.02x) ok:%d, BYTE[%d]ret 0x%.02x(%d)' 10), regAddr16 + byteIndex, ok, byteIndex, result8, result8)
     i2c_bus.stop()
-    'if bShowDebug
-    '    term.fstr3(string(" -- readBytes(0x%.02x, ct=%d) ok:%d' 10), regAddr16, byteCount, ok)
     if ok <> 0
-        debug("readBytes() ", uhex(ok))
+        debug("readBytes() ERROR ", uhex(ok), uhex_word(regAddr16))
+    else
+        if bShowIODebug
+            debug(" -rdByts: ", udec(ok), uhex_word(regAddr16), uhex_byte_array(pByteStore, byteCount))
 
 VAR { Variables copies for each instance }
 
-    BYTE    signal_grid[SIGNAL_GRID_SIZE_BYTES]
-    BYTE    range_grid[RANGE_GRID_SIZE_BYTES]
+    LONG    signalGrid32[SIGNAL_GRID_SIZE_LONGS]
+    WORD    rangeGrid16[RANGE_GRID_SIZE_WORDS]
 
     BYTE    xtalkTempBuffer[VL53L5CX_XTALK_BUFFER_SIZE]           ' 776 bytes
     BYTE    ofsTempBuffer[VL53L5CX_OFFSET_BUFFER_SIZE]          ' 488 bytes
