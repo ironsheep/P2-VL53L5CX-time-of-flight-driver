@@ -71,6 +71,14 @@ OBJ { our sensors }
 VAR
     long    cog
 
+    long    imageResolution
+    long    frequencyHz8
+    long    eRangingMode
+    long    ePowerMode
+    long    timeMsec32
+    long    percent8
+    long    targetOrder
+
 DAT { run-time condition vars }
 
     bUseHDMI        long    TRUE        ' set to TRUE to enable HDMI use/output
@@ -80,11 +88,13 @@ DAT { run-time condition vars }
 
     senseCog        long    0
 
-    screenTitle    byte    "-- Click mpu9dof object Debug --", 0
+    screenTitle     byte    "-- TOF Sensor object Debug --", 0
+
+    bDataReady      long    FALSE
 
 CON { -------------- MAIN -------------- }
 
-PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, basePin, imageResolution, imageWidth, bDvcFound, eDvcStatus
+PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt
     '' Main entry point of MPU 9DOF demo
     debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
 
@@ -101,56 +111,89 @@ PUB main() | statusOK, nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupV
 
     if bDvcFound
 
-        tofSensor.setResolution(tofSensor.VL53L5CX_RESOLUTION_8X8)      ' Enable all 64 pads
+        'tofSensor.setResolution(tofSensor.VL53L5CX_RESOLUTION_4X4)      ' Enable all 64 pads
 
         ' start ranging result display loop
+        bDataReady := FALSE     ' have task wait until data is present
         cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
 
-        eDvcStatus, imageResolution := tofSensor.getResolution()                     ' Query sensor for current resolution - either 4x4 or 8x8
-        debug("* imageResolution = ", udec(imageResolution))
+        eDvcStatus, imageResolution := tofSensor.getResolution()                     ' Query sensor for
         imageWidth := sqrt imageResolution                               ' Calculate printing width
+        debug("* imageResolution = ", udec_(imageResolution), udec(eDvcStatus))
+        debug("* imageWidth = ", udec_(imageWidth))
+
+        eDvcStatus, frequencyHz8 := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
+        debug("* frequencyHz8 = ", udec_(frequencyHz8), udec(eDvcStatus))
+
+        eDvcStatus, eRangingMode := tofSensor.getRangingMode()                     ' Query sensor for
+        debug("* eRangingMode = ", udec_(eRangingMode), udec(eDvcStatus))
+
+        eDvcStatus, ePowerMode := tofSensor.getPowerMode()
+        debug("* ePowerMode = ", udec_(ePowerMode), udec(eDvcStatus))
+
+        eDvcStatus, timeMsec32 := tofSensor.getIntegrationTime()
+        debug("* timeMsec32 = ", udec_(timeMsec32), udec(eDvcStatus))
+
+        eDvcStatus, percent8 := tofSensor.getSharpenerPercent()
+        debug("* percent8 = ", udec_(percent8), udec(eDvcStatus))
+
+        eDvcStatus, targetOrder := tofSensor.getTargetOrder()
+        debug("* targetOrder = ", udec_(targetOrder), udec(eDvcStatus))
+
 
         tofSensor.startRanging()
 
+        readCt := 10    ' set max read count
+        repeat  until readCt <= 0
+            ' wait for sensor to start ranging
+
+            if not tofSensor.isRanging()
+                debug("- ranging not started, waiting...")
+                waitms(5000) ' Small delay between polling (5 sec)
+                next
+
+            ' is ranging, now let's show data every 5 sec
+            ' Poll sensor for new data
+            eDvcStatus, bDataReturned := tofSensor.isDataReady()
+            if bDataReturned
+                eDvcStatus, bDataUnloaded := tofSensor.getRangingData()     ' Read distance data into array
+                if bDataUnloaded
+                    ' tell consumer
+                    bDataReady := TRUE
+                    ' now wait for consumer...
+                    readCt--    ' count this one
+                    repeat until bDataReady == FALSE ' hold until BG task displays it
+            else
+                waitms(2000) ' Small delay between polling (2 sec)
+
+        ' Stop Measurements
+        tofSensor.stopRanging()
+
     repeat  ' halt here for now
 
-    ' Stop Measurements
-    tofSensor.stopRanging()
-
-    repeat  ' halt here for now
-
-PRI taskMonitorRanging(imageWidth) | bDataReady, eDvcStatus, bDataReturned, x, y, WORD samples[8]
+PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
 ' TASK: TOF Listener
 
-    tofSensor.enableMyIOToo()   ' enable this COG to do I/O too
     repeat  ' forever
-        ' wait for sensor to start ranging
 
-        if not tofSensor.isRanging()
-            debug("- ranging not started, waiting...")
-            waitms(5000) ' Small delay between polling (5 sec)
-            next
+        debug("* Waiting for data...")
+        ' wait for data to be ready
+        repeat until bDataReady == TRUE ' hold until BG task displays it
+        debug("* Have data, processing")
 
-        ' is ranging, now let's show data every 5 sec
-        ' Poll sensor for new data
-        eDvcStatus, bDataReady := tofSensor.isDataReady()
-        if bDataReady
-            eDvcStatus, bDataReturned := tofSensor.getRangingData()     ' Read distance data into array
-            if bDataReturned
-                ' The ST library returns the data transposed from zone mapping shown in datasheet
-                ' Pretty-print data with increasing y, decreasing x to reflect reality
-                'for (int y = 0 ; y <= imageWidth * (imageWidth - 1) ; y += imageWidth)
-                repeat y from 0 to imageWidth - 1
-                    'for (int x = imageWidth - 1 ; x >= 0 ; x--)
-                    repeat x from imageWidth -1 to 0 step -1
-                        samples[x] := tofSensor.sampleDistanceMM((y * imageWidth) + x)
-                    debug("- ", udec(y), ": ", udec_word_array_(@samples, 8))
-                debug(" ")
+        ' The ST library returns the data transposed from zone mapping shown in datasheet
+        ' Pretty-print data with increasing y, decreasing x to reflect reality
+        'for (int y = 0 ; y <= imageWidth * (imageWidth - 1) ; y += imageWidth)
+        repeat y from 0 to imageWidth - 1
+            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
+            repeat x from imageWidth -1 to 0 step -1
+                samples[x] := tofSensor.sampleDistanceMM((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_word_array_(@samples, 8))
+        debug(" ")
 
-        if not tofSensor.isRanging()
-            ' sensor stopped ranging quit to wait until it starts again
-            quit
-        waitms(5000) ' Small delay between polling (5 sec)
+        debug("* Done with data")
+        bDataReady := FALSE
+
 
 
 CON { ------ PRIVATE (Utility) Methods ------ }
