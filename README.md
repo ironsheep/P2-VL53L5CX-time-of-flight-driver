@@ -38,6 +38,9 @@ This sensor is available in a number of forms from a number of sources:
 Latest Changes:
 
 ```
+6 Sep 2022
+- All public methods converted, now in midst of turning on ranging...
+- Code starting to take shape
 5 Sep 2022
 - Started porting unload and overall ranging control code
 4 Sep 2022
