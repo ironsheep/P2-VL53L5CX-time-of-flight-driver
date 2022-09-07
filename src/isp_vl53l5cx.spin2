@@ -85,20 +85,6 @@ CON { Interface constants }
     VL53L5CX_RESOLUTION_4X4         = 16
     VL53L5CX_RESOLUTION_8X8         = 64
 
-'  VL53L5CX_NB_TGT_PER_ZONE is used to define the number of targets per zone sent
-'   through I2C. This value can be changed by user, in order to tune I2C
-'   transaction, and also the total memory size (a lower number of targets per
-'   zone means a lower RAM). The value must be between 1 and 4.
-'  (driver tunable)
-    VL53L5CX_NB_TGT_PER_ZONE	    = 1
-
-' VL53L5CX_USE_RAW_FORMAT can be used to avoid data conversion upon sensor unload.
-'  By default there is a conversion during unload from the sensor. Setting this to TRUE
-'  prevents this conversion, allowing use of the firmware format instead of converted format.
-'  The firmware format allows increased precision.
-'  (driver tunable)
-    VL53L5CX_USE_RAW_FORMAT = FALSE
-
 con { fixed io pins }
 
   RX1      = 63  { I }                                          ' programming / debug
@@ -944,7 +930,7 @@ PUB didInterrupt() : bPinState | rawPin
     'if bShowDebug
         'debug(`snsLog ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
 
-VAR ' --- PRIVATE temp buffer: P2 <-> MCU on sensor ---
+VAR '  --- PRIVATE temp buffer: P2 <-> MCU on sensor ---
 
     BYTE    dciWorkBuffer[32]   ' workspace for getting/modifying sensor values
 
@@ -1198,84 +1184,44 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
-' ---------------------------------------------------------
-' the Propeller physical storage vs. logical is as follows:
-'
-' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
-'    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
-'
-' REAL: Read returned $95 $A1 $23 $4B
-' Expect Value of:    $4B $23 $A1 $95
-'
-' ---------------------------------------------------------
-PRI longFmDeviceValue(nDeviceOrderedValue) : logicalValue32b
-' convert LONG from device to logical order
 
-    logicalValue32b.byte[0] := nDeviceOrderedValue.byte[3]
-    logicalValue32b.byte[1] := nDeviceOrderedValue.byte[2]
-    logicalValue32b.byte[2] := nDeviceOrderedValue.byte[1]
-    logicalValue32b.byte[3] := nDeviceOrderedValue.byte[0]
-    'debug("longFmDeviceValue(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
+CON '  --- DRIVER Tunable CONSTANTs ---
 
-PRI wordMoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
-' copy device words to destination but converting their byte order enroute
-    repeat wdIdx from 0 to wordCount - 1
-        dvcWord := WORD[pDestWords][wdIdx]
-        logicalWord.byte[0] := dvcWord.byte[1]
-        logicalWord.byte[1] := dvcWord.byte[0]
-        WORD[pDestWords][wdIdx] := logicalWord
+'  VL53L5CX_NB_TGT_PER_ZONE is used to define the number of targets per zone sent
+'   through I2C. This value can be changed by user, in order to tune I2C
+'   transaction, and also the total memory size (a lower number of targets per
+'   zone means a lower RAM). The value must be between 1 and 4.
+'  (driver tunable)
+    VL53L5CX_NB_TGT_PER_ZONE	    = 1
 
-PRI longMoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx
-' copy device words to destination but converting their byte order enroute
-    repeat longIdx from 0 to longCount - 1
-        WORD[pDestLongs][longIdx] := longFmDeviceValue(WORD[pDvcLongs][longIdx])
+' VL53L5CX_USE_RAW_FORMAT can be used to avoid data conversion upon sensor unload.
+'  By default there is a conversion during unload from the sensor. Setting this to TRUE
+'  prevents this conversion, allowing use of the firmware format instead of converted format.
+'  The firmware format allows increased precision.
+'  (driver tunable)
+    VL53L5CX_USE_RAW_FORMAT = FALSE
 
-PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
-    ' NOTE: union interp:
-    '   union Block_header {
-    '   	uint32_t bytes             ' bytes is the full long
-    '   	struct {
-    '   		uint32_t type : 4      ' type is bits 31-28
-    '   		uint32_t size : 12     ' size is bits 27-16
-    '   		uint32_t idx : 16      ' type is bits 15-0
-    '   	}
-    '   }
-    '
-    ' each following line: load logical, mask it and shift it into place...
-    ' - bhType physical store: $7000_0000, logical store $0000_0070
-    bhType := (logicalValue32b & $0000_00f0) >> 4                                           ' build $0000_0007
-    ' - bhSize physical store: $0856_0000, logical store $0000_5608
-    bhSize := (logicalValue32b & $0000_ff00 >> 8) | (logicalValue32b & $0000_000f) << 8      ' build $0000_0856
-    ' - bhIdx physical store: $0000_3412, logical store $1234_0000
-    bhIdx := (logicalValue32b & $ff00_0000) >> 24 | (logicalValue32b & $00ff_0000) >> 8    ' build $0000_3412
 
-PRI replaceBHSizeInLong(logicalValue32, bhSize) : newLogicalValue32
-    ' NOTE: union interp:
-    '   union Block_header {
-    '   	uint32_t bytes             ' bytes is the full long
-    '   	struct {
-    '   		uint32_t type : 4      ' type is bits 31-28
-    '   		uint32_t size : 12     ' size is bits 27-16
-    '   		uint32_t idx : 16      ' type is bits 15-0
-    '   	}
-    '   }
-    ' - bhSize physical store: $0856_0000, logical store $0000_5608
-    newLogicalValue32 := logicalValue32
-    newLogicalValue32 &= !$0000_ff0f                 ' clear size field
-    newLogicalValue32 |= ((bhSize & $0000_0f00) >> 8) | ((bhSize & $0000_00ff) << 8)     ' place new size value in field
+DAT '   --- DRIVER Tunable DATA ---
 
-'PRI BHValuesToLong(bhType, bhIdx, bhSize) : deviceLong
-    ' NOTE: union interp:
-    '   union Block_header {
-    '   	uint32_t bytes             ' bytes is the full long
-    '   	struct {
-    '   		uint32_t type : 4      ' type is bits 31-28
-    '   		uint32_t size : 12     ' size is bits 27-16
-    '   		uint32_t idx : 16      ' type is bits 15-0
-    '   	}
-    '   }
-    ' FIXME: undone NOT IMPLEMENTED!!!
+' ----------------------------------------------------------------------------------
+' The bytes below (T/F) are used to configure the sensor output. User can
+'   set to FALSE if he wants to disable selected output, in order to reduce
+'   I2C access.  These are enabled by default.
 
+    ' driver tunables: (T/F where F is disabled)
+    ambientPerSpad      BYTE    TRUE    ' false = VL53L5CX_DISABLE_AMBIENT_PER_SPAD
+    nbSpadsEnabled      BYTE    TRUE    ' false = VL53L5CX_DISABLE_NB_SPADS_ENABLED
+    nbTargetDetected    BYTE    TRUE    ' false = VL53L5CX_DISABLE_NB_TARGET_DETECTED
+    signalPerSpad       BYTE    TRUE    ' false = VL53L5CX_DISABLE_SIGNAL_PER_SPAD
+    rangeSigmaMM        BYTE    TRUE    ' false = VL53L5CX_DISABLE_RANGE_SIGMA_MM
+    distanceMM          BYTE    TRUE    ' false = VL53L5CX_DISABLE_DISTANCE_MM
+    reflectancePrcnt    BYTE    TRUE    ' false = VL53L5CX_DISABLE_REFLECTANCE_PERCENT
+    targetStatus        BYTE    TRUE    ' false = VL53L5CX_DISABLE_TARGET_STATUS
+    motionIndicator     BYTE    TRUE    ' false = VL53L5CX_DISABLE_MOTION_INDICATOR
+' ----------------------------------------------------------------------------------
+
+CON '  --- DO NOT ADJUST BELOW HERE ---
 
 CON { Device Registers - best we can tell }
 
@@ -1344,25 +1290,6 @@ CON { driver sizes }
     RANGE_GRID_SIZE_WORDS = 64
 
     VL53L5CX_NBR_MOTION_ENTRIES = 32
-
-DAT { start ranging data }
-
-' ----------------------------------------------------------------------------------
-' The bytes below (T/F) are used to configure the sensor output. User can
-'   set to FALSE if he wants to disable selected output, in order to reduce
-'   I2C access.  These are enabled by default.
-
-    ' driver tunables: (T/F where F is disabled)
-    ambientPerSpad      BYTE    TRUE    ' false = VL53L5CX_DISABLE_AMBIENT_PER_SPAD
-    nbSpadsEnabled      BYTE    TRUE    ' false = VL53L5CX_DISABLE_NB_SPADS_ENABLED
-    nbTargetDetected    BYTE    TRUE    ' false = VL53L5CX_DISABLE_NB_TARGET_DETECTED
-    signalPerSpad       BYTE    TRUE    ' false = VL53L5CX_DISABLE_SIGNAL_PER_SPAD
-    rangeSigmaMM        BYTE    TRUE    ' false = VL53L5CX_DISABLE_RANGE_SIGMA_MM
-    distanceMM          BYTE    TRUE    ' false = VL53L5CX_DISABLE_DISTANCE_MM
-    reflectancePrcnt    BYTE    TRUE    ' false = VL53L5CX_DISABLE_REFLECTANCE_PERCENT
-    targetStatus        BYTE    TRUE    ' false = VL53L5CX_DISABLE_TARGET_STATUS
-    motionIndicator     BYTE    TRUE    ' false = VL53L5CX_DISABLE_MOTION_INDICATOR
-' ----------------------------------------------------------------------------------
 
 VAR { driver uninitialized data }
 
@@ -1885,6 +1812,84 @@ PRI convertByteOrder(pByteArray, nbrBytes) | tmp, i
         'tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
         ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
         LONG[@BYTE[pByteArray][i]] := longFmDeviceValue(LONG[@BYTE[pByteArray][i]]) ' yep, this is reversable...
+
+' ---------------------------------------------------------
+' the Propeller physical storage vs. logical is as follows:
+'
+' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
+'    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
+'
+' REAL: Read returned $95 $A1 $23 $4B
+' Expect Value of:    $4B $23 $A1 $95
+'
+' ---------------------------------------------------------
+PRI longFmDeviceValue(nDeviceOrderedValue) : logicalValue32b
+' convert LONG from device to logical order
+
+    logicalValue32b.byte[0] := nDeviceOrderedValue.byte[3]
+    logicalValue32b.byte[1] := nDeviceOrderedValue.byte[2]
+    logicalValue32b.byte[2] := nDeviceOrderedValue.byte[1]
+    logicalValue32b.byte[3] := nDeviceOrderedValue.byte[0]
+    'debug("longFmDeviceValue(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
+
+PRI wordMoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
+' copy device words to destination but converting their byte order enroute
+    repeat wdIdx from 0 to wordCount - 1
+        dvcWord := WORD[pDestWords][wdIdx]
+        logicalWord.byte[0] := dvcWord.byte[1]
+        logicalWord.byte[1] := dvcWord.byte[0]
+        WORD[pDestWords][wdIdx] := logicalWord
+
+PRI longMoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx
+' copy device words to destination but converting their byte order enroute
+    repeat longIdx from 0 to longCount - 1
+        WORD[pDestLongs][longIdx] := longFmDeviceValue(WORD[pDvcLongs][longIdx])
+
+PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
+    ' NOTE: union interp:
+    '   union Block_header {
+    '   	uint32_t bytes             ' bytes is the full long
+    '   	struct {
+    '   		uint32_t type : 4      ' type is bits 31-28
+    '   		uint32_t size : 12     ' size is bits 27-16
+    '   		uint32_t idx : 16      ' type is bits 15-0
+    '   	}
+    '   }
+    '
+    ' each following line: load logical, mask it and shift it into place...
+    ' - bhType physical store: $7000_0000, logical store $0000_0070
+    bhType := (logicalValue32b & $0000_00f0) >> 4                                           ' build $0000_0007
+    ' - bhSize physical store: $0856_0000, logical store $0000_5608
+    bhSize := (logicalValue32b & $0000_ff00 >> 8) | (logicalValue32b & $0000_000f) << 8      ' build $0000_0856
+    ' - bhIdx physical store: $0000_3412, logical store $1234_0000
+    bhIdx := (logicalValue32b & $ff00_0000) >> 24 | (logicalValue32b & $00ff_0000) >> 8    ' build $0000_3412
+
+PRI replaceBHSizeInLong(logicalValue32, bhSize) : newLogicalValue32
+    ' NOTE: union interp:
+    '   union Block_header {
+    '   	uint32_t bytes             ' bytes is the full long
+    '   	struct {
+    '   		uint32_t type : 4      ' type is bits 31-28
+    '   		uint32_t size : 12     ' size is bits 27-16
+    '   		uint32_t idx : 16      ' type is bits 15-0
+    '   	}
+    '   }
+    ' - bhSize physical store: $0856_0000, logical store $0000_5608
+    newLogicalValue32 := logicalValue32
+    newLogicalValue32 &= !$0000_ff0f                 ' clear size field
+    newLogicalValue32 |= ((bhSize & $0000_0f00) >> 8) | ((bhSize & $0000_00ff) << 8)     ' place new size value in field
+
+'PRI BHValuesToLong(bhType, bhIdx, bhSize) : deviceLong
+    ' NOTE: union interp:
+    '   union Block_header {
+    '   	uint32_t bytes             ' bytes is the full long
+    '   	struct {
+    '   		uint32_t type : 4      ' type is bits 31-28
+    '   		uint32_t size : 12     ' size is bits 27-16
+    '   		uint32_t idx : 16      ' type is bits 15-0
+    '   	}
+    '   }
+    ' FIXME: undone NOT IMPLEMENTED!!!
 
 
 CON ' --- CONSTANTS for dci subCommands ---
