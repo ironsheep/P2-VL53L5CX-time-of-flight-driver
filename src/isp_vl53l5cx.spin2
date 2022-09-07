@@ -54,8 +54,11 @@ CON { Interface constants }
 ' method return values
 '  VL53L5CX_STATUS_OK indicates that VL53L5 sensor has no error.
     VL53L5CX_STATUS_OK              = 0
-'  VL53L5CX_MCU_ERROR is used to indicate a MCU issue.
+'  VL53L5CX_MCU_ERROR indicates an MCU issue.
     VL53L5CX_MCU_ERROR              = 66
+'  VL53L5CX_STATUS_BAD_DATA indicates an unexpected value was read from the device
+    VL53L5CX_STATUS_BAD_DATA        = 96
+'  VL53L5CX_STATUS_INVALID_PARAM indicates an unexpected value was passed as a parameter
     VL53L5CX_STATUS_INVALID_PARAM   = 127
 '  VL53L5CX_STATUS_ERROR indicates that something is wrong (value, I2C access, ...)
     VL53L5CX_STATUS_ERROR           = (-1)
@@ -135,9 +138,17 @@ PUB enableDebug(bEnable)
 '' Turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object)
     bShowDebug := bEnable
     if bShowDebug
-        'debug(`snsLog 10 '* DBG ON' 10)
+        debug("VL53: DBG ON")
     else
-        'debug(`snsLog 10 '* DBG off' 10)
+        debug("VL53: DBG Off")
+
+PUB enableIODebug(bEnable)
+'' Turn on/off file-internal I/O debug messaging (bEnable = T/F where T means show debug messages from this object)
+    bShowIODebug := bEnable
+    if bShowIODebug
+        debug("VL53: I/O DBG ON")
+    else
+        debug("VL53: I/O DBG Off")
 
 PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | eDvcStatus, bIsAlive
 '' Start the device running
@@ -180,7 +191,7 @@ PUB stop()
 '}
 
 PUB enableMyIOToo() | pScl, pSda, pnInt, pRst, pLpn, pPwren  ' whoa pInt collides with internal var?!
-'' allow new cog to do I/O's too
+'' Allow new cog to do I/O's too
     debug("VL53: I/O PINs Setup")
     pScl :=  pin_scl  ' copy pins to pasm acccesible location
     pSda :=  pin_sda  ' copy pins to pasm acccesible location
@@ -204,7 +215,10 @@ PUB deviceID() : eDevice
     eDevice := dvcI2CAddr
 
 PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTempStatusNotOK
-'' Return T/F where T means the device was found on the i2c bus
+'' Returns {bIsAlive} when {eDvcStatus} == VL53L5CX_STATUS_OK
+''  {bIsAlive} contains T/F (where T means the device was found on the i2c bus)
+'' Alternatively returns {eDvcStatus}:
+''   VL53L5CX_STATUS_ERROR - if there was an I2C communications error
     eDvcStatus := VL53L5CX_STATUS_OK
     bIsAlive := FALSE
 
@@ -250,12 +264,13 @@ PUB getI2CAddress() : nDvcI2CAddr
 
 PUB setRangingFrequencyHz(newFrequency8) : eDvcStatus | bStatusNotOK, rngMin, rngMax, BYTE deviceValue
 '' Configure sensor for a new ranging frequency in Hz {newFrequency8}
+''  NOTE1: legal range in Hz varies by resolution: [4x4: 1-60 Hz, 8x8: 1-15Hz]
+''  NOTE2: must be called after setRangingMode()
 '' Returns VL53L5CX_STATUS_OK if the sensor's sampling frequency was changed.
-'' Alternatively Returns
+'' Alternatively returns {eDvcStatus}:
 ''   VL53L5CX_STATUS_INVALID_PARAM - then curr resolution is yet set or
-''     Hz value if out of range for resolution (4x4: 1-60 Hz, 8x8: 1-15Hz)
+''     Hz value if out of range for resolution
 ''   VL53L5CX_STATUS_ERROR - if there was an I2C communications error
-''  NOTE: must be called after setRangingMode()
 
     eDvcStatus := VL53L5CX_STATUS_OK
 
@@ -286,7 +301,7 @@ PUB setRangingFrequencyHz(newFrequency8) : eDvcStatus | bStatusNotOK, rngMin, rn
 PUB getRangingFrequencyHz() : eDvcStatus, frequencyHz8 | bStatusNotOK
 '' Returns the current ranging frequency {frequencyHz8} in Hz when {eDvcStatus} == VL53L5CX_STATUS_OK
 ''  Ranging frequency corresponds to the time between each measurement.
-'' Alternatively Returns
+'' Alternatively returns {eDvcStatus}:
 ''   VL53L5CX_STATUS_ERROR - if there was an I2C communications error
     debug("VL53: Get Ranging Freq Hz")
 
@@ -294,14 +309,18 @@ PUB getRangingFrequencyHz() : eDvcStatus, frequencyHz8 | bStatusNotOK
 
     'status |= vl53l5cx_dci_read_data(p_dev, (uint8_t *)p_dev->temp_buffer, VL53L5CX_DCI_FREQ_HZ, 4)
     bStatusNotOK := dciReadData(@dciWorkBuffer, VL53L5CX_DCI_FREQ_HZ, 4)
-    frequencyHz8 := BYTE[@dciWorkBuffer][1]
+    frequencyHz8 := BYTE[@dciWorkBuffer][1]     ' *p_frequency_hz = p_dev->temp_buffer[0x01];
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB setRangingMode(eRangingMode) : eDvcStatus | single_range, bStatusNotOK
-'' Configure sensor ranging mode
-''  Returns VL53L5CX_STATUS_OK if the sensor's ranging mode was changed or VL53L5CX_STATUS_ERROR otherwise.
+'' Configure sensor ranging mode: [VL53L5CX_RANG_MODE_CONTINUOUS or VL53L5CX_RANG_MODE_AUTONOMOUS]
+''  Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's ranging mode was changed.
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_INVALID_PARAM if not one of two expected values
+''  VL53L5CX_STATUS_ERROR - if there was an I2C communications error
+
     eDvcStatus := VL53L5CX_STATUS_OK
     single_range := 0
 
@@ -335,15 +354,17 @@ PUB setRangingMode(eRangingMode) : eDvcStatus | single_range, bStatusNotOK
 
 
 PUB getRangingMode() : eDvcStatus, eRangingMode | bStatusNotOK
-'' Return the sensors' current ranging mode if eDvcStatus is VL53L5CX_STATUS_OK
-''  Returns eDvcStatus of VL53L5CX_STATUS_ERROR if communications failure
+'' Return the sensors' current ranging mode when {eDvcStatus} is VL53L5CX_STATUS_OK
+''   {eRangingMode} will be set to [VL53L5CX_RANG_MODE_CONTINUOUS or VL53L5CX_RANG_MODE_AUTONOMOUS]
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     debug("VL53: Get Ranging Mode")
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, 8)
     bStatusNotOK := dciReadData(@dciWorkBuffer, VL53L5CX_DCI_RANGING_MODE, 8)
 
-    if (BYTE[@dciWorkBuffer][1] == 1)
+    if (BYTE[@dciWorkBuffer][1] == 1)           ' if (p_dev->temp_buffer[0x01] == (uint8_t)0x1)
         eRangingMode := VL53L5CX_RANG_MODE_CONTINUOUS
     else
         eRangingMode := VL53L5CX_RANG_MODE_AUTONOMOUS
@@ -353,8 +374,10 @@ PUB getRangingMode() : eDvcStatus, eRangingMode | bStatusNotOK
 
 PUB setResolution(eResolution) : eDvcStatus | bStatusNotOK
 '' Set the sensors' resolution to [VL53L5CX_RESOLUTION_4X4, or VL53L5CX_RESOLUTION_8X8]
-''  Returns VL53L5CX_STATUS_OK if the sensor's ranging resolution was changed or
-''  VL53L5CX_STATUS_INVALID_PARAM if not one of two expected values or VL53L5CX_STATUS_ERROR otherwise.
+''  Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's ranging resolution was changed
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_INVALID_PARAM if not one of two expected values
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
     bStatusNotOK := 0                   ' initially, we are OK
 
@@ -401,32 +424,47 @@ PUB setResolution(eResolution) : eDvcStatus | bStatusNotOK
             eDvcStatus := VL53L5CX_STATUS_INVALID_PARAM
 
     if eDvcStatus <> VL53L5CX_STATUS_INVALID_PARAM
-
         requestedResolution := eResolution
         ' status |= _vl53l5cx_send_offset_data(p_dev, eResolution)
         bStatusNotOK |= sendOffsetData(eResolution)
         ' status |= _vl53l5cx_send_xtalk_data(p_dev, eResolution)
         bStatusNotOK |= sendXtalkData(eResolution)
 
-    ' don't let _STATUS_INVALID_PARAM be overridden
-    if bStatusNotOK and eDvcStatus == VL53L5CX_STATUS_OK
-        eDvcStatus := VL53L5CX_STATUS_ERROR
+        ' don't let _STATUS_INVALID_PARAM be overridden
+        if bStatusNotOK
+            eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PUB getResolution() : eDvcStatus, nResolution8 | bStatusNotOK
-'' Return the sensors' currently configured ranging resolution
+PUB getResolution() : eDvcStatus, eResolution | bStatusNotOK
+'' Return the sensors' currently configured ranging resolution when {eDvcStatus} is VL53L5CX_STATUS_OK
+''  {nResolution8} will be set to [VL53L5CX_RESOLUTION_4X4, or VL53L5CX_RESOLUTION_8X8]
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_BAD_DATA if an unexpected value was read from the sensor
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     debug("VL53: Get Resolution")
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_ZONE_CONFIG, 8)
     bStatusNotOK := dciReadData(@dciWorkBuffer, VL53L5CX_DCI_ZONE_CONFIG, 8)
 
-    nResolution8 := BYTE[@dciWorkBuffer][0] * BYTE[@dciWorkBuffer][1] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
+    eResolution := BYTE[@dciWorkBuffer][0] * BYTE[@dciWorkBuffer][1] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
 
-    if bStatusNotOK
+    if eResolution <> VL53L5CX_RESOLUTION_4X4 and eResolution <> VL53L5CX_RESOLUTION_8X8
+        debug("VL53: ERROR: getResolution() bad value from device! ", udec(eResolution))
+        eDvcStatus := VL53L5CX_STATUS_BAD_DATA
+
+    if bStatusNotOK and eDvcStatus == VL53L5CX_STATUS_OK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB setPowerMode(ePowerMode) : eDvcStatus | bStatusNotOK, bTempStatusNotOK, eCurrPowerMode
-' uint8_t vl53l5cx_set_power_mode(VL53L5CX_Configuration *p_dev, uint8_t power_mode)
+'' Set the sensors' power-mode to [VL53L5CX_POWER_MODE_SLEEP, or VL53L5CX_POWER_MODE_WAKEUP]
+'' Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's power-mode was changed
+''   Set the sensor in Low Power mode, for example if the sensor is not used during a long time.
+''   The value VL53L5CX_POWER_MODE_SLEEP can be used to enable the low power mode.
+''   To restart the sensor, use the value VL53L5CX_POWER_MODE_WAKEUP.
+''   NOTE: Please ensure that the device is not streaming before calling the function.
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_INVALID_PARAM if not one of two expected values
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_get_power_mode(p_dev, &current_power_mode)
@@ -444,16 +482,19 @@ PUB setPowerMode(ePowerMode) : eDvcStatus | bStatusNotOK, bTempStatusNotOK, eCur
                     bStatusNotOK |= pollForAnswer(1, 0, $0006, $01, $00)   ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0x01, 0)
 
             other:
-                eDvcStatus := VL53L5CX_STATUS_ERROR
+                eDvcStatus := VL53L5CX_STATUS_INVALID_PARAM
 
-        if eDvcStatus <> VL53L5CX_STATUS_ERROR and not bStatusNotOK
+        if eDvcStatus == VL53L5CX_STATUS_OK and not bStatusNotOK ' (yeah, double negative is real!)
             bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)       'status |= WrByte(&(p_dev->platform), 0x7FFF, 0x02)
 
-    if bStatusNotOK
-        eDvcStatus := VL53L5CX_STATUS_ERROR
+        if eDvcStatus <> VL53L5CX_STATUS_INVALID_PARAM and bStatusNotOK
+            eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB getPowerMode() : eDvcStatus, ePowerMode  | bStatusNotOK, bTempStatusNotOK, dvcPwrVal
-' uint8_t vl53l5cx_get_power_mode(VL53L5CX_Configuration *p_dev, uint8_t *p_power_mode)
+'' Return the sensors' current power-mode when {eDvcStatus} is VL53L5CX_STATUS_OK
+''   {ePowerMode} will be set to [VL53L5CX_POWER_MODE_WAKEUP or VL53L5CX_POWER_MODE_SLEEP]
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
     debug("VL53: Get Power Mode")
 
@@ -477,7 +518,14 @@ PUB getPowerMode() : eDvcStatus, ePowerMode  | bStatusNotOK, bTempStatusNotOK, d
             eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB setIntegrationTime(timeMsec32) : eDvcStatus | bStatusNotOK, integrationUs
-' uint8_t vl53l5cx_set_integration_time_ms(VL53L5CX_Configuration *p_dev, uint32_t integration_time_ms)
+'' Sets a new integration time in ms. [2ms <= {timeMsec32} <= 1000ms]
+''  Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's integration time was changed
+'' NOTE: Integration time must be computed to be lower than the ranging period, for
+''  the selected resolution.
+'' NOTE: that this setting has NO IMPACT on ranging mode continous.
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_INVALID_PARAM if not within the supported range
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
     integrationUs := timeMsec32 * 1000
 
@@ -492,7 +540,9 @@ PUB setIntegrationTime(timeMsec32) : eDvcStatus | bStatusNotOK, integrationUs
             eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB getIntegrationTime() : eDvcStatus, timeMsec32 | bStatusNotOK
-'uint8_t vl53l5cx_get_integration_time_ms(VL53L5CX_Configuration *p_dev, uint32_t *p_time_ms)
+'' Return the sensors' currently configured integration time (in ms) when {eDvcStatus} is VL53L5CX_STATUS_OK
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     debug("VL53: Get Integration Time (ms)")
     eDvcStatus := VL53L5CX_STATUS_OK
 
@@ -506,9 +556,14 @@ PUB getIntegrationTime() : eDvcStatus, timeMsec32 | bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB setSharpenerPercent(percent8) : eDvcStatus | bStatusNotOK, dvcSharpener
-'uint8_t vl53l5cx_set_sharpener_percent(VL53L5CX_Configuration *p_dev, uint8_t sharpener_percent)
+'' Sets a new sharpener value in percent. [0 <= {percent8} <= 99] - where 0 means disabled
+''  Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's sharpener value was changed
+''  Change to blur more or less zones depending upon the application
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_INVALID_PARAM if not within the supported range
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
-    if (percent8 < 0 or percent8 >= 100)
+    if (percent8 < 0 or percent8 > 99)
         status |= VL53L5CX_STATUS_INVALID_PARAM
     else
         'sharpener = (sharpener_percent * (uint8_t)255) / (uint8_t)100;
@@ -520,7 +575,11 @@ PUB setSharpenerPercent(percent8) : eDvcStatus | bStatusNotOK, dvcSharpener
             eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB getSharpenerPercent() : eDvcStatus, percent8 | bStatusNotOK
-'uint8_t vl53l5cx_get_sharpener_percent(VL53L5CX_Configuration *p_dev, uint8_t *p_sharpener_percent)
+'' Return the sensors' currently configured sharpener (in percent) when {eDvcStatus} is VL53L5CX_STATUS_OK
+''  value returned {percent8} will be [0 (disabled) to 99] percent.
+''   NOTE: Sharpener can be changed to blur more or less zones depending of the application.
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     debug("VL53: Get Sharpener Percent")
     eDvcStatus := VL53L5CX_STATUS_OK
 
@@ -534,7 +593,12 @@ PUB getSharpenerPercent() : eDvcStatus, percent8 | bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB setTargetOrder(eTargetOrder) : eDvcStatus | bStatusNotOK, BYTE dvcTargetOrder
-' uint8_t vl53l5cx_set_target_order(VL53L5CX_Configuration *p_dev, uint8_t target_order)
+'' Set the sensors' target order to [VL53L5CX_TGT_ORDER_CLOSEST, or VL53L5CX_TGT_ORDER_STRONGEST]
+'' Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's target order was changed
+''   NOTE: By default, the sensor is configured with the strongest output.
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_INVALID_PARAM if not within the supported range
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
 
     if ((eTargetOrder == VL53L5CX_TGT_ORDER_CLOSEST) || (eTargetOrder == VL53L5CX_TGT_ORDER_STRONGEST))
@@ -547,21 +611,30 @@ PUB setTargetOrder(eTargetOrder) : eDvcStatus | bStatusNotOK, BYTE dvcTargetOrde
         eDvcStatus |= VL53L5CX_STATUS_INVALID_PARAM
 
 
-PUB getTargetOrder() : eDvcStatus, targetOrder | bStatusNotOK
-'uint8_t vl53l5cx_get_target_order(VL53L5CX_Configuration *p_dev, uint8_t *p_target_order)
+PUB getTargetOrder() : eDvcStatus, eTargetOrder | bStatusNotOK
+'' Return the sensors' currently configured target order when {eDvcStatus} is VL53L5CX_STATUS_OK
+''   {eTargetOrder} will be set to [VL53L5CX_TGT_ORDER_CLOSEST or VL53L5CX_TGT_ORDER_STRONGEST]
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_BAD_DATA if an unexpected value was read from the sensor
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     debug("VL53: Get Target Order")
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_dci_read_data(p_dev, (uint8_t *)p_dev->temp_buffer, VL53L5CX_DCI_TARGET_ORDER, 4);
     bStatusNotOK := dciReadData(@dciWorkBuffer, VL53L5CX_DCI_TGT_ORDER, 4)
     ' *p_target_order = (uint8_t)p_dev->temp_buffer[0x0];
-    targetOrder := BYTE[@dciWorkBuffer][0]
+    eTargetOrder := BYTE[@dciWorkBuffer][0]
 
-    if bStatusNotOK
+    if eTargetOrder <> VL53L5CX_TGT_ORDER_CLOSEST and eTargetOrder <> VL53L5CX_TGT_ORDER_STRONGEST
+        debug("VL53: ERROR: getTargetOrder() bad value from device! ", udec(eTargetOrder))
+        eDvcStatus := VL53L5CX_STATUS_BAD_DATA
+
+    if bStatusNotOK and eDvcStatus == VL53L5CX_STATUS_OK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logicalValue32b, bStatusNotOK, idx, BYTE cmd[4]
-'' Tell the sensor to start ranging.
+'' Starts a ranging session.
+''   NOTE: When the sensor is streaming, user cannot change settings 'on-the-fly'.
 ''  Returns VL53L5CX_STATUS_OK if the start ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
 
@@ -669,7 +742,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     bStatusNotOK := dciWriteData(@header_config, VL53L5CX_DCI_OUTPUT_CONFIG, header_config_len)
 
     'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output_bh_enable), VL53L5CX_DCI_OUTPUT_ENABLES, (uint16_t)sizeof(output_bh_enable))
-    repeat idx from 0 to 4 - 1
+    repeat idx from 0 to (output_bh_en_len / 4) - 1
         long[@output_bh_enable][idx] := longFmDeviceValue(long[@output_bh_enable][idx])
     bStatusNotOK := dciWriteData(@output_bh_enable, VL53L5CX_DCI_OUTPUT_ENABLES, output_bh_en_len)
 
@@ -690,7 +763,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
         bSensorActive := TRUE
 
 PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK, bStatusNotOK
-'' Tell Sensor to stop ranging.
+'' Stops the ranging session. It must be used when the sensor is streaming, after calling startRanging().
 ''  Returns VL53L5CX_STATUS_OK if the stop ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
     bSensorActive := FALSE
@@ -734,7 +807,9 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 PUB isDataReady() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dataReady
-'' Return T/F where T means data is ready
+'' Check sensor by polling i2c. Return T/F (where T means data is ready) when {eDvcStatus} is VL53L5CX_STATUS_OK
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= RdMulti(&(p_dev->platform), 0x0, p_dev->temp_buffer, 4)
@@ -767,13 +842,10 @@ PUB isDataReady() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dataReady
 
 
 PUB getRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bhType, bhIdx, bhSize
-'' Retrieve the sense data from the sensor
-    ' Returns true if the ranging data was read from the sensor or false otherwise.
-    ' Data will be stored in the VL53L5CX_ResultsData struct passed as a pointer.
-    ' If this function returns false an error entry will be stored in the lastError struct.
-    debug("VL53: Get Ranging Data")
-
-    'uint8_t result = vl53l5cx_get_ranging_data(Dev, pRangingData)
+'' Retrieve ranging data from the sensor. Return T/F (where T means data was retrieved) when {eDvcStatus} is VL53L5CX_STATUS_OK
+'' Alternatively returns {eDvcStatus}:
+''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
+    debug("VL53: Unload Ranging Data")
 
     eDvcStatus := VL53L5CX_STATUS_OK
     'union Block_header *bh_ptr
@@ -932,7 +1004,9 @@ PUB didInterrupt() : bPinState | rawPin
 
 VAR '  --- PRIVATE temp buffer: P2 <-> MCU on sensor ---
 
-    BYTE    dciWorkBuffer[32]   ' workspace for getting/modifying sensor values
+    ' NOTE: it seems that read side maxes out at 20 bytes: getIntegrationTime()
+    '       while write side maxes out at 16 bytes: setResolution()
+    BYTE    dciWorkBuffer[32]   ' workspace for getting/modifying sensor values (32 bytes for safety?)
 
 CON '  ---- PRIVATE (Utility) Methods ----
 
@@ -1024,17 +1098,12 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
     else
         debug("* idDevice() NOT found")
 
-PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempStatusNotOK, tmp
+PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempStatusNotOK, BYTE tmp
 
     eDvcStatus := VL53L5CX_STATUS_OK
 
     debug("VL53: Init")
 
-    ' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TGT_PER_ZONE, 0x00, 0x01, 0x00}
-    pipe_ctrl.byte[0] := VL53L5CX_NB_TGT_PER_ZONE
-    pipe_ctrl.byte[1] := 0
-    pipe_ctrl.byte[2] := 1
-    pipe_ctrl.byte[3] := 0
 
     single_range := 1
 
@@ -1169,13 +1238,19 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
     ' status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
     bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
+    ' uint8_t pipe_ctrl[] = {VL53L5CX_NB_TGT_PER_ZONE, 0x00, 0x01, 0x00}
+    BYTE [@pipe_ctrl][0] := VL53L5CX_NB_TGT_PER_ZONE
+    BYTE [@pipe_ctrl][1] := 0
+    BYTE [@pipe_ctrl][2] := 1
+    BYTE [@pipe_ctrl][3] := 0
+
     ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, (uint16_t)sizeof(pipe_ctrl))
     bStatusNotOK := dciWriteData(@pipe_ctrl, VL53L5CX_DCI_PIPE_CONTROL, 4)
 
     if VL53L5CX_NB_TGT_PER_ZONE <> 1
         tmp := VL53L5CX_NB_TGT_PER_ZONE
         ' status |= vl53l5cx_dci_replace_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_FW_NB_TARGET, 16, (uint8_t *)&tmp, 1, 0x0C);
-        bStatusNotOK |= dciReplaceData(@tempBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp.byte[0], 1, $0C)
+        bStatusNotOK |= dciReplaceData(@dciWorkBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp, 1, $0C)
 
     ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
     single_range := longFmDeviceValue(single_range) ' sigh yep, this call undoes it too!
@@ -1899,24 +1974,44 @@ CON ' --- CONSTANTS for dci subCommands ---
     DCI_WR_OVERHEAD_SIZE_IN_BYTES = DCI_WR_HEADER_SIZE_IN_BYTES + DCI_WR_FOOTER_SIZE_IN_BYTES
     DCI_RD_CMD_LEN_IN_BYTES = 12
 
-PRI dciReplaceData(pDataBffr, register16, dataBffrSize, pNewData, newDataSize, newDataOfst) : eDvcStatus | bStatusNotOK
-' REF uint8_t vl53l5cx_dci_replace_data(p_dev, *data, index, data_size, *new_data, new_data_size, new_data_pos)
+PRI dciReplaceData(pDataBffr, dciMemAddr16, dataBffrSize, pNewData, newDataSize, newDataOfst) : eDvcStatus | bStatusNotOK
+' REF uint8_t vl53l5cx_dci_replace_data(*data, index, data_size, *new_data, new_data_size, new_data_pos)
+'  Replace 'extra data' in DCI. The data can be a casted structure, or a simple array.
+'   NOTE that the FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ..
+'  Returns {eDvcStatus}:
+'    VL53L5CX_STATUS_OK - write success (wrote value length of {sizeInBytes16} bytes from memory at {pBuffer})
+'    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
+
+    if dataBffrSize & $0003 <> 0
+        debug("VL53: dciReadData() ERROR length of ", udec(dataBffrSize), " is NOT multiple of 4, fixed!")
+        dataBffrSize := (dataBffrSize & $FFFC) + 4
+
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    bStatusNotOK := dciReadData(pDataBffr, register16, dataBffrSize)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
+    bStatusNotOK := dciReadData(pDataBffr, dciMemAddr16, dataBffrSize)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
 
     BYTEMOVE(@BYTE[pDataBffr][newDataOfst], pNewData, newDataSize)          ' (void)memcpy(&(data[new_data_pos]), new_data, new_data_size)
 
-    bStatusNotOK |= dciWriteData(pDataBffr, register16, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
+    bStatusNotOK |= dciWriteData(pDataBffr, dciMemAddr16, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PRI dciReadData(pBuffer, register16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, rd_size, address16, BYTE cmd[DCI_RD_CMD_LEN_IN_BYTES]
-'   vl53l5cx_dci_read_data(*data, index, data_size)
+
+PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, rd_size, address16, BYTE cmd[DCI_RD_CMD_LEN_IN_BYTES]
+' REF vl53l5cx_dci_read_data(*data, index, data_size)
+'  Read 'extra data' from DCI. Using a known index, the function fills the casted structure passed in argument.
+'   NOTE that the FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ....
+'  Returns {eDvcStatus}:
+'    VL53L5CX_STATUS_OK - read success (returned value length of {sizeInBytes16} is in memory at {pBuffer})
+'    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
 
     eDvcStatus := VL53L5CX_STATUS_OK
     rd_size := sizeInBytes16 + DCI_WR_OVERHEAD_SIZE_IN_BYTES
+
+    if sizeInBytes16 & $0003 <> 0
+        debug("VL53: dciReadData() ERROR length of ", udec(sizeInBytes16), " is NOT multiple of 4, fixed!")
+        sizeInBytes16 := (sizeInBytes16 & $FFFC) + 4
 
     'uint8_t cmd[] = {0x00, 0x00, 0x00, 0x00,
     '				 0x00, 0x00, 0x00, 0x0f,
@@ -1934,9 +2029,9 @@ PRI dciReadData(pBuffer, register16, sizeInBytes16) : eDvcStatus | bStatusNotOK,
         bytemove(@tempBuffer, @cmd, DCI_RD_CMD_LEN_IN_BYTES)
         ' fill-in our actual request
         'cmd[0] = (uint8_t)(index >> 8)
-        BYTE[@tempBuffer][0] := (register16 >> 8) & $ff
+        BYTE[@tempBuffer][0] := (dciMemAddr16 >> 8) & $ff
         'cmd[1] = (uint8_t)(index & (uint32_t)0xff)
-        BYTE[@tempBuffer][1] := register16 & $ff
+        BYTE[@tempBuffer][1] := dciMemAddr16 & $ff
         'cmd[2] = (uint8_t)((data_size & (uint16_t)0xff0) >> 4)
         BYTE[@tempBuffer][2] := (sizeInBytes16 & $ff0) >> 4
         'cmd[3] = (uint8_t)((data_size & (uint16_t)0xf) << 4)
@@ -1965,8 +2060,18 @@ PRI dciReadData(pBuffer, register16, sizeInBytes16) : eDvcStatus | bStatusNotOK,
         else
             debug("dciReadData() ", uhex_byte_array(pBuffer, sizeInBytes16))
 
-PRI dciWriteData(pBuffer, register16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, wr_size, WORD address16, BYTE dciHeader[DCI_WR_HEADER_SIZE_IN_BYTES], BYTE dciFooter[DCI_WR_FOOTER_SIZE_IN_BYTES]
-' vl53l5cx_dci_write_data(*data, index, data_size)
+
+PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, wr_size, WORD address16, BYTE dciHeader[DCI_WR_HEADER_SIZE_IN_BYTES], BYTE dciFooter[DCI_WR_FOOTER_SIZE_IN_BYTES]
+' REF uint8_t vl53l5cx_dci_write_data(*data, index, data_size)
+'  Write 'extra data' to DCI. The data can be simple data, or casted structure.
+'  NOTE that the DCI FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ..
+'  Returns {eDvcStatus}:
+'    VL53L5CX_STATUS_OK - write success (wrote value length of {sizeInBytes16} bytes from memory at {pBuffer})
+'    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
+
+    if sizeInBytes16 & $0003 <> 0
+        debug("VL53: dciWriteData() ERROR length of ", udec(sizeInBytes16), " is NOT multiple of 4, fixed!")
+        sizeInBytes16 := (sizeInBytes16 & $FFFC) + 4
 
     eDvcStatus := VL53L5CX_STATUS_OK
     wr_size := sizeInBytes16 + DCI_WR_FOOTER_SIZE_IN_BYTES
@@ -1988,9 +2093,9 @@ PRI dciWriteData(pBuffer, register16, sizeInBytes16) : eDvcStatus | bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
     else
         'headers[0] = (uint8_t)(index >> 8)
-        BYTE[@dciHeader][0] := (register16 >> 8) & $ff
+        BYTE[@dciHeader][0] := (dciMemAddr16 >> 8) & $ff
         'headers[1] = (uint8_t)(index & (uint32_t)0xff)
-        BYTE[@dciHeader][1] := register16 & $ff
+        BYTE[@dciHeader][1] := dciMemAddr16 & $ff
         'headers[2] = (uint8_t)(((data_size & (uint16_t)0xff0) >> 4))
         BYTE[@dciHeader][2] := (sizeInBytes16 & $ff0) >> 4
         'headers[3] = (uint8_t)((data_size & (uint16_t)0xf) << 4)
