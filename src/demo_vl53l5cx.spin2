@@ -99,7 +99,7 @@ CON { -------------- MAIN -------------- }
 
 PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt
     '' Main entry point of MPU 9DOF demo
-    debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
+    'debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
 
     if bUseHDMI
         tvDebug.start(PIN_HDMI_BASE, @screenTitle)
@@ -257,17 +257,17 @@ PRI checkAndShowResult(valueSet, valueRead, eDvcStatus, pMessage)
 
 PRI locateSensor() : ok | bDevicePresent, addrFound
     ' find and configure our mpu9dof device
-    debug(`demoLog 'Setup...' 10)
+    debug("* Setup...")
     tofSensor.enableDebug(TRUE)
     bDevicePresent := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
     if bDevicePresent
-        debug(`demoLog 'ID device address...' 10)
+        debug("* ID device address...")
         addrFound := tofSensor.getI2CAddress()
         ok := true
         if(addrFound <> tofSensor.DVC_NOT_FOUND)
-            debug(`demoLog 'Found Addr-`(addrFound)' 10)
+            debug("* Found Addr-`(addrFound)")
         else
-            debug(`demoLog 'ERROR: Found no devices' 10)
+            debug("* ERROR: Found no devices")
             ok := false
 
 DAT { misc messages }
