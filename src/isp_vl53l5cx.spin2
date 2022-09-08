@@ -347,7 +347,6 @@ PUB setRangingMode(eRangingMode) : eDvcStatus | single_range, bStatusNotOK
         ' status |= vl53l5cx_dci_write_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_RANGING_MODE, (uint16_t)8)
         bStatusNotOK |= dciWriteData(@dciWorkBuffer, VL53L5CX_DCI_RANGING_MODE, 8)
         ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-        single_range := longFmDeviceValue(single_range)
         bStatusNotOK |= dciWriteData(@single_range, VL53L5CX_DCI_SINGLE_RANGE, 4)
 
         if bStatusNotOK
@@ -537,7 +536,6 @@ PUB setIntegrationTime(timeMsec32) : eDvcStatus | bStatusNotOK, integrationUs
         eDvcStatus |= VL53L5CX_STATUS_INVALID_PARAM
     else
         ' status |= vl53l5cx_dci_replace_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_INT_TIME, 20, (uint8_t *)&integration, 4, 0x00)
-        integrationUs := longFmDeviceValue(integrationUs)
         bStatusNotOK := dciReplaceData(@dciWorkBuffer, VL53L5CX_DCI_INT_TIME, 20, @integrationUs, 4, 0)
         if bStatusNotOK
             eDvcStatus := VL53L5CX_STATUS_ERROR
@@ -554,7 +552,7 @@ PUB getIntegrationTime() : eDvcStatus, timeMsec32 | bStatusNotOK
 
     '(void)memcpy(p_time_ms, &(p_dev->temp_buffer[0x0]), 4);
     '*p_time_ms /= (uint32_t)1000;
-    timeMsec32 := longFmDeviceValue(LONG[@dciWorkBuffer][0]) / 1000
+    timeMsec32 := LONG[@dciWorkBuffer][0] / 1000
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
@@ -679,21 +677,6 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
         LONG[@output_bh_enable][0] += 2048
 
     ' load output[] buffer data
-
-{   ' do we do this or not?!!
-    LONG[@output][0] := longFmDeviceValue(startBh)
-    LONG[@output][1] := longFmDeviceValue(metaDataBh)
-    LONG[@output][2] := longFmDeviceValue(commonDataBh)
-    LONG[@output][3] := longFmDeviceValue(ambientRateBh)
-    LONG[@output][4] := longFmDeviceValue(spadCountBh)
-    LONG[@output][5] := longFmDeviceValue(nbTargetDetectedBh)
-    LONG[@output][6] := longFmDeviceValue(signalRateBh)
-    LONG[@output][7] := longFmDeviceValue(rangeSigmaMMBh)
-    LONG[@output][8] := longFmDeviceValue(distanceBh)
-    LONG[@output][9] := longFmDeviceValue(reflectanceBh)
-    LONG[@output][10] := longFmDeviceValue(targetStatusBh)
-    LONG[@output][11] := longFmDeviceValue(motionDetectBh)
-'}
     LONG[@output][0] := startBh
     LONG[@output][1] := metaDataBh
     LONG[@output][2] := commonDataBh
@@ -707,37 +690,8 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     LONG[@output][10] := targetStatusBh
     LONG[@output][11] := motionDetectBh
 
-{
-    ' values we are BH interpreting
-    #define VL53L5CX_START_BH			    $0000000D
-    #define VL53L5CX_METADATA_BH			$54B400C0
-    #define VL53L5CX_COMMONDATA_BH			$54C00040
-    #define VL53L5CX_AMBIENT_RATE_BH		$54D00104
-    #define VL53L5CX_NB_TARGET_DETECTED_BH	$57D00401
-    #define VL53L5CX_SPAD_COUNT_BH			$55D00404
-    #define VL53L5CX_SIGNAL_RATE_BH			$58900404
-    #define VL53L5CX_RANGE_SIGMA_MM_BH		$64900402
-    #define VL53L5CX_DISTANCE_BH			$66900402
-    #define VL53L5CX_REFLECTANCE_BH			$6A900401
-    #define VL53L5CX_TARGET_STATUS_BH		$6B900401
-    #define VL53L5CX_MOTION_DETECT_BH		$CC5008C0
-}
-
     eDvcStatus, nResolution8 := getResolution()     ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
     streamcount := 255                              ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
-
-    ' NOTE: union interp:
-    '   union Block_header {
-    '   	uint32_t bytes             ' bytes is the full long
-    '   	struct {
-    '   		uint32_t type : 4      ' type is bits 31-28
-    '   		uint32_t size : 12     ' size is bits 27-16
-    '   		uint32_t idx : 16      ' type is bits 15-0
-    '   	}
-    '   }
-    '
-    ' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
-    '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
 
     ' Update data size
     dataReadSize := 0
@@ -820,7 +774,7 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
     bStatusNotOK := readBytes($2FFC, @auto_stop_flag, 4)
     'debug("CHP: ", uhex_long(auto_stop_flag), uhex_byte_array(@auto_stop_flag, 4))
 
-    if (longFmDeviceValue(auto_stop_flag) <> $4FF)
+    if (longDeviceValue(auto_stop_flag) <> $4FF)
         bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)        ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
 
         ' Provoke MCU stop
@@ -912,7 +866,7 @@ PUB getRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bh
     streamcount := BYTE[@tempBuffer][0]
 
     'SwapBuffer(p_dev->temp_buffer, (uint16_t)p_dev->data_read_size)
-    convertByteOrder(@tempBuffer, dataReadSize)
+    longReplaceDeviceValues(@tempBuffer, dataReadSize)
 
     ' Start conversion at position 16 to avoid headers
     'for (i = (uint32_t)16 i < (uint32_t)p_dev->data_read_size i += (uint32_t)4)
@@ -933,13 +887,13 @@ PUB getRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bh
                 if enaAmbientPerSpad
                     ' (void)memcpy(p_results->ambient_per_spad, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize)
-                    longMoveDeviceValues(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longmoveDeviceValues(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
 
             spadCountIdx:
                 if enaNbSpadsEnabled
                     '(void)memcpy(p_results->nb_spads_enabled, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize)
-                    longMoveDeviceValues(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longmoveDeviceValues(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize / 4)
 
             nbTargetDetectIdx:
                 if enaNbTargetDetected
@@ -950,19 +904,19 @@ PUB getRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bh
                 if enaSignalPerSpad
                     '(void)memcpy(p_results->signal_per_spad, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize)
-                    longMoveDeviceValues(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longmoveDeviceValues(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
 
             rangeSigmaMMIdx:
                 if enaRangeSigmaMM
                     '(void)memcpy(p_results->range_sigma_mm, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize)
-                    wordMoveDeviceValues(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
+                    wordmoveDeviceValues(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
 
             distanceIdx:
                 if enaDistanceMM
                     '(void)memcpy(p_results->distance_mm, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
                     ' W/O CONVERT: bytemove(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize)
-                    wordMoveDeviceValues(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
+                    wordmoveDeviceValues(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
 
             reflectancePrcntIdx:
                 if enaReflectancePrcnt
@@ -990,10 +944,10 @@ PUB getRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bh
                             LONG    rsltMotionValue32[32]
                     }
                     ' just rewrite the byte orders in place...
-                    global_indicator_1 := longFmDeviceValue(global_indicator_1)
-                    global_indicator_2 := longFmDeviceValue(global_indicator_2)
+                    global_indicator_1 := longDeviceValue(global_indicator_1)
+                    global_indicator_2 := longDeviceValue(global_indicator_2)
                     repeat i from 0 to VL53L5CX_NBR_MOTION_ENTRIES - 1
-                        LONG[@rsltMotionValue32][i] := longFmDeviceValue(LONG[@rsltMotionValue32][i])
+                        LONG[@rsltMotionValue32][i] := longDeviceValue(LONG[@rsltMotionValue32][i])
 
             other:
                 ' nothing to do here
@@ -1308,7 +1262,6 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
         bStatusNotOK |= dciReplaceData(@dciWorkBuffer, VL53L5CX_DCI_FW_NB_TARGET, 16, @tmp, 1, $0C)
 
     ' status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&single_range, VL53L5CX_DCI_SINGLE_RANGE, (uint16_t)sizeof(single_range))
-    single_range := longFmDeviceValue(single_range) ' sigh yep, this call undoes it too!
     bStatusNotOK := dciWriteData(@single_range, VL53L5CX_DCI_SINGLE_RANGE, 4)
 
     if bStatusNotOK
@@ -1785,7 +1738,7 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
     if eResolution == VL53L5CX_RESOLUTION_4X4
         BYTEMOVE(@BYTE[@tempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
         ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t or LONGs)
-        convertByteOrder(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        longReplaceDeviceValues(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
         ' extract signal grid
         LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$3c], SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
@@ -1834,7 +1787,7 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
         WORDMOVE(@BYTE[@tempBuffer][$140], @rangeGrid16, RANGE_GRID_SIZE_WORDS)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
 
         ' convert tempBuffer back into device byte-order - NOTE: yep, this 2nd call reversed out the changes (buffer is known to be an array of uint32_t or LONGs)
-        convertByteOrder(@tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        longReplaceDeviceValues(@tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
     ' shift buffer up 8 bytes ?! (removing first 8 bytes, leaving copy of last 8 bytes!)
     '  FIXME: this seems broken as we are moving up 8 but our length is (max - 4) ?? this should be max - 8, right?
@@ -1869,7 +1822,7 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
         BYTEMOVE(@BYTE[@tempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
 
         ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t's/LONG's)
-        convertByteOrder(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        longReplaceDeviceValues(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
 
         ' extract copy of ordered signal grid
         LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$34], SIGNAL_GRID_SIZE_LONGS)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
@@ -1899,7 +1852,7 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
         LONGMOVE(@BYTE[@tempBuffer][$34], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
 
         ' convert tempBuffer back into device byte-order - NOTE: yep, this 2nd call reversed out the changes (buffer is known to be an array of uint32_t or LONGs)
-        convertByteOrder(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
+        longReplaceDeviceValues(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
 
         ' copy profile_4x4 into temp buffer
         BYTEMOVE(@BYTE[@tempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
@@ -1916,36 +1869,24 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PRI convertByteOrder(pByteArray, nbrBytes) | tmp, i
-' Inner function, not available outside this file. This function is used
-'  to convert to device required byte order
 
-    ' ---------------------------------------
-    ' ARDUINO NOTEs (for my peace of mind ;-)
-    ' ---------------------------------------
-    ' uint32_t      waveHeaderSampleRate = -1;
-    ' waveHeaderSampleRate = (uint32_t)byteBuffer[27] << 24 + (uint32_t)byteBuffer[26] << 16 + (uint32_t)byteBuffer[25] << 8 + byteBuffer[24];
-    '
-    ' waveHeaderSampleRate =
-    '   ((uint32_t)byteBuffer[27] << 24) +
-    '   ((uint32_t)byteBuffer[26] << 16) +
-    '   ((uint32_t)byteBuffer[25] << 8) +
-    '   byteBuffer[24];
 
-    ' ---------------------------------------
-    ' PROPELLER NOTEs
-    ' ---------------------------------------
-    ' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
-    '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
 
-    repeat i from 0 to nbrBytes - 1 step 4                              ' for (i = 0 i < size i = i + 4)
-        'tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
-        ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
-        LONG[@BYTE[pByteArray][i]] := longFmDeviceValue(LONG[@BYTE[pByteArray][i]]) ' yep, this is reversable...
+' ---------------------------------------------------------
+' ARDUINO NOTEs (for my peace of mind ;-)
+' ---------------------------------------------------------
+' uint32_t      waveHeaderSampleRate = -1;
+' waveHeaderSampleRate = (uint32_t)byteBuffer[27] << 24 + (uint32_t)byteBuffer[26] << 16 + (uint32_t)byteBuffer[25] << 8 + byteBuffer[24];
+'
+' waveHeaderSampleRate =
+'   ((uint32_t)byteBuffer[27] << 24) +
+'   ((uint32_t)byteBuffer[26] << 16) +
+'   ((uint32_t)byteBuffer[25] << 8) +
+'   byteBuffer[24];
 
 ' ---------------------------------------------------------
 ' the Propeller physical storage vs. logical is as follows:
-'
+' ---------------------------------------------------------
 ' NOTE:     LOGICAL STORE (VALUE): $1234_5678 (bytes in register)
 '    while PHYSICAL STORE(IN-RAM): $7856_3412 (bytes in RAM)
 '
@@ -1953,29 +1894,35 @@ PRI convertByteOrder(pByteArray, nbrBytes) | tmp, i
 ' Expect Value of:    $4B $23 $A1 $95
 '
 ' ---------------------------------------------------------
-PRI longFmDeviceValue(nDeviceOrderedValue) : logicalValue32b
+PRI longDeviceValue(nDeviceOrderedValue) : logicalValue32b
 ' convert LONG from device to logical order
-
     logicalValue32b.byte[0] := nDeviceOrderedValue.byte[3]
     logicalValue32b.byte[1] := nDeviceOrderedValue.byte[2]
     logicalValue32b.byte[2] := nDeviceOrderedValue.byte[1]
     logicalValue32b.byte[3] := nDeviceOrderedValue.byte[0]
-    'debug("longFmDeviceValue(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
+    'debug("longDeviceValue(", uhex_long_(nDeviceOrderedValue), ") returns ", uhex_long_(logicalValue32b))
 
-PRI wordMoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
-' copy device words to destination but converting their byte order enroute
+PRI longReplaceDeviceValues(pByteArray, nbrBytes) | tmp, i
+' rewrite device LONGS converting their byte order in-place
+    repeat i from 0 to nbrBytes - 1 step 4                              ' for (i = 0 i < size i = i + 4)
+        'tmp := (BYTE[pByteArray][i] << 24) | (BYTE[pByteArray][i + 1] << 16) | (BYTE[pByteArray][i + 2] << 8) | (BYTE[pByteArray][i + 3])
+        ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
+        LONG[@BYTE[pByteArray][i]] := longDeviceValue(LONG[@BYTE[pByteArray][i]]) ' yep, this is reversable...
+
+PRI wordmoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
+' copy device WORDS to destination but converting their byte order enroute
     repeat wdIdx from 0 to wordCount - 1
         dvcWord := WORD[pDestWords][wdIdx]
         logicalWord.byte[0] := dvcWord.byte[1]
         logicalWord.byte[1] := dvcWord.byte[0]
         WORD[pDestWords][wdIdx] := logicalWord
 
-PRI longMoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx
-' copy device words to destination but converting their byte order enroute
+PRI longmoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx
+' copy device LONGS to destination but converting their byte order enroute
     repeat longIdx from 0 to longCount - 1
-        WORD[pDestLongs][longIdx] := longFmDeviceValue(WORD[pDvcLongs][longIdx])
+        WORD[pDestLongs][longIdx] := longDeviceValue(WORD[pDvcLongs][longIdx])
 
-PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
+' ---------------------------------------------------------------
     ' NOTE: union interp:
     '   union Block_header {
     '   	uint32_t bytes             ' bytes is the full long
@@ -1985,35 +1932,11 @@ PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
     '   		uint32_t idx : 16      ' type is bits 15-0
     '   	}
     '   }
-{
-    ' values we are BH interpreting
-    '                                        iiiissst ???
-    #define VL53L5CX_START_BH			    $0000000D
-    #define VL53L5CX_METADATA_BH			$54B400C0
-    #define VL53L5CX_COMMONDATA_BH			$54C00040
-    #define VL53L5CX_AMBIENT_RATE_BH		$54D00104
-    #define VL53L5CX_NB_TARGET_DETECTED_BH	$57D00401
-    #define VL53L5CX_SPAD_COUNT_BH			$55D00404
-    #define VL53L5CX_SIGNAL_RATE_BH			$58900404
-    #define VL53L5CX_RANGE_SIGMA_MM_BH		$64900402
-    #define VL53L5CX_DISTANCE_BH			$66900402
-    #define VL53L5CX_REFLECTANCE_BH			$6A900401
-    #define VL53L5CX_TARGET_STATUS_BH		$6B900401
-    #define VL53L5CX_MOTION_DETECT_BH		$CC5008C0
-}
-    ' each following line: load logical, mask it and shift it into place...
-    '   Physical:  78563412         Logical:  12345678
-{  --> first attempt
-    ' - bhType physical store: $7000_0000, logical store $0000_0070
-    bhType := (logicalValue32b & $0000_00f0) >> 4                                           ' build $0000_0007
-    ' - bhSize physical store: $0856_0000, logical store $0000_5608
-    bhSize := (logicalValue32b & $0000_ff00 >> 8) | (logicalValue32b & $0000_000f) << 8      ' build $0000_0856
-    ' - bhIdx physical store: $0000_3412, logical store $1234_0000
-    bhIdx := (logicalValue32b & $ff00_0000) >> 24 | (logicalValue32b & $00ff_0000) >> 8    ' build $0000_3412
-'}
-
-' 2nd attempt:
-    ' each following line: load logical, mask it and shift it into place...
+' ---------------------------------------------------------------
+PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
+' Return three field values from within the long
+'
+    ' each following line: take logical, mask it and shift value into place...
     '   Physical:  21436587         Logical:  87654321
     ' - bhType physical store: $0800_0000, logical store $0000_0001
     bhType := (logicalValue32b & $0000_000f)                                ' build $0000_0001
@@ -2023,22 +1946,8 @@ PRI longToBHValues(logicalValue32b) : bhType, bhIdx, bhSize
     bhIdx := ((logicalValue32b & $ffff_0000)) >> 16                           ' build $0000_8765
 
 PRI replaceBHSizeInLong(logicalValue32, bhSize) : newLogicalValue32
-    ' NOTE: union interp:
-    '   union Block_header {
-    '   	uint32_t bytes             ' bytes is the full long
-    '   	struct {
-    '   		uint32_t type : 4      ' type is bits 31-28
-    '   		uint32_t size : 12     ' size is bits 27-16
-    '   		uint32_t idx : 16      ' type is bits 15-0
-    '   	}
-    '   }
-{  --> first attempt
-    ' - bhSize physical store: $0856_0000, logical store $0000_5608
-    newLogicalValue32 := logicalValue32
-    newLogicalValue32 &= !$0000_ff0f                 ' clear size field
-    newLogicalValue32 |= ((bhSize & $0000_0f00) >> 8) | ((bhSize & $0000_00ff) << 8)     ' place new size value in field
-'}
-' 2nd attempt:
+' Replace the BHSize value within the long
+'
     '   Physical:  21436587         Logical:  87654321
     ' - bhSize physical store: $2043_0000, logical store $0000_4320
     newLogicalValue32 := logicalValue32
@@ -2047,20 +1956,8 @@ PRI replaceBHSizeInLong(logicalValue32, bhSize) : newLogicalValue32
     'debug("  -- replaceBHSizeInLong() was: ", uhex_long_(logicalValue32))
     'debug("  --                        is: ", uhex_long_(newLogicalValue32))
 
-'PRI BHValuesToLong(bhType, bhIdx, bhSize) : deviceLong
-    ' NOTE: union interp:
-    '   union Block_header {
-    '   	uint32_t bytes             ' bytes is the full long
-    '   	struct {
-    '   		uint32_t type : 4      ' type is bits 31-28
-    '   		uint32_t size : 12     ' size is bits 27-16
-    '   		uint32_t idx : 16      ' type is bits 15-0
-    '   	}
-    '   }
-    ' FIXME: undone NOT IMPLEMENTED!!!
-
-
 CON ' --- CONSTANTS for dci/ranging subCommands ---
+
     DCI_SRTRNG_CMD_LEN_IN_BYTES = 4
 
     DCI_RD_CMD_LEN_IN_BYTES = 12
@@ -2126,7 +2023,7 @@ PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotO
         'status |= RdMulti(&(p_dev->platform), VL53L5CX_UI_CMD_START, p_dev->temp_buffer, rd_size)
         bStatusNotOK |= readBytes(VL53L5CX_UI_CMD_START, @tempBuffer, rd_size)
         'SwapBuffer(p_dev->temp_buffer, data_size + (uint16_t)12)
-        convertByteOrder(@tempBuffer, rd_size)
+        longReplaceDeviceValues(@tempBuffer, rd_size)
 
         ' Copy data from FW into input structure (-4 bytes to remove header)
         'repeat i from 0 to sizeInBytes16 - 1            'for (i = 0; i < (int16_t)data_size; i++)
@@ -2181,7 +2078,7 @@ PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNot
         BYTE[@dciHeader][3] := (sizeInBytes16 & $00f) << 4
 
         'Copy data from structure to FW format (+4 bytes to add header)
-        convertByteOrder(pBuffer, sizeInBytes16)        ' SwapBuffer(data, data_size) convert to device order
+        longReplaceDeviceValues(pBuffer, sizeInBytes16)        ' SwapBuffer(data, data_size) convert to device order
         'repeat i from sizeInBytes16 - 1 to 0        'for (i = (int16_t)data_size - (int16_t)1; i >= 0; i--)
         '	p_dev->temp_buffer[i + 4] = data[i]
         '    BYTE[@tempBuffer][i + DCI_WR_HEADER_SIZE_IN_BYTES] := BYTE[pBuffer][i]
@@ -2202,7 +2099,7 @@ PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNot
         'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
         bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
-        convertByteOrder(pBuffer, sizeInBytes16)        ' SwapBuffer(data, data_size)   (flip it back)
+        longReplaceDeviceValues(pBuffer, sizeInBytes16)        ' SwapBuffer(data, data_size)   (flip it back)
 
         if bStatusNotOK
             eDvcStatus := VL53L5CX_STATUS_ERROR
