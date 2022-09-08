@@ -271,6 +271,7 @@ PUB setRangingFrequencyHz(newFrequency8) : eDvcStatus | bStatusNotOK, rngMin, rn
 ''   VL53L5CX_STATUS_INVALID_PARAM - then curr resolution is yet set or
 ''     Hz value if out of range for resolution
 ''   VL53L5CX_STATUS_ERROR - if there was an I2C communications error
+    debug("VL53: Set Ranging Freq Hz")
 
     eDvcStatus := VL53L5CX_STATUS_OK
 
@@ -293,7 +294,7 @@ PUB setRangingFrequencyHz(newFrequency8) : eDvcStatus | bStatusNotOK, rngMin, rn
     if eDvcStatus <> VL53L5CX_STATUS_INVALID_PARAM
         deviceValue := newFrequency8 & $FF
         ' status |= vl53l5cx_dci_replace_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_FREQ_HZ, 4, (uint8_t *)&frequency_hz, 1, 0x01);
-        bStatusNotOK := dciReplaceData(@tempBuffer, VL53L5CX_DCI_FREQ_HZ, 4, @deviceValue, 1, $01)
+        bStatusNotOK := dciReplaceData(@dciWorkBuffer, VL53L5CX_DCI_FREQ_HZ, 4, @deviceValue, 1, $01)
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
@@ -1969,36 +1970,18 @@ PRI replaceBHSizeInLong(logicalValue32, bhSize) : newLogicalValue32
 
 CON ' --- CONSTANTS for dci subCommands ---
 
+    DCI_RD_CMD_LEN_IN_BYTES = 12
     DCI_WR_HEADER_SIZE_IN_BYTES = 4
     DCI_WR_FOOTER_SIZE_IN_BYTES = 8
     DCI_WR_OVERHEAD_SIZE_IN_BYTES = DCI_WR_HEADER_SIZE_IN_BYTES + DCI_WR_FOOTER_SIZE_IN_BYTES
-    DCI_RD_CMD_LEN_IN_BYTES = 12
 
-PRI dciReplaceData(pDataBffr, dciMemAddr16, dataBffrSize, pNewData, newDataSize, newDataOfst) : eDvcStatus | bStatusNotOK
-' REF uint8_t vl53l5cx_dci_replace_data(*data, index, data_size, *new_data, new_data_size, new_data_pos)
-'  Replace 'extra data' in DCI. The data can be a casted structure, or a simple array.
-'   NOTE that the FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ..
-'  Returns {eDvcStatus}:
-'    VL53L5CX_STATUS_OK - write success (wrote value length of {sizeInBytes16} bytes from memory at {pBuffer})
-'    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
-
-    if dataBffrSize & $0003 <> 0
-        debug("VL53: dciReadData() ERROR length of ", udec(dataBffrSize), " is NOT multiple of 4, fixed!")
-        dataBffrSize := (dataBffrSize & $FFFC) + 4
-
-    eDvcStatus := VL53L5CX_STATUS_OK
-
-    bStatusNotOK := dciReadData(pDataBffr, dciMemAddr16, dataBffrSize)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
-
-    BYTEMOVE(@BYTE[pDataBffr][newDataOfst], pNewData, newDataSize)          ' (void)memcpy(&(data[new_data_pos]), new_data, new_data_size)
-
-    bStatusNotOK |= dciWriteData(pDataBffr, dciMemAddr16, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
-
-    if bStatusNotOK
-        eDvcStatus := VL53L5CX_STATUS_ERROR
+VAR
+    BYTE    dciCmd[DCI_RD_CMD_LEN_IN_BYTES]
+    BYTE    dciHeader[DCI_WR_HEADER_SIZE_IN_BYTES]
+    BYTE    dciFooter[DCI_WR_FOOTER_SIZE_IN_BYTES]
 
 
-PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, rd_size, address16, BYTE cmd[DCI_RD_CMD_LEN_IN_BYTES]
+PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, rd_size, pktLen, address16
 ' REF vl53l5cx_dci_read_data(*data, index, data_size)
 '  Read 'extra data' from DCI. Using a known index, the function fills the casted structure passed in argument.
 '   NOTE that the FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ....
@@ -2010,23 +1993,23 @@ PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotO
     rd_size := sizeInBytes16 + DCI_WR_OVERHEAD_SIZE_IN_BYTES
 
     if sizeInBytes16 & $0003 <> 0
-        debug("VL53: dciReadData() ERROR length of ", udec(sizeInBytes16), " is NOT multiple of 4, fixed!")
+        debug("VL53: dciReadData(", uhex_word_(dciMemAddr16), ") ERROR length of ", udec(sizeInBytes16), " is NOT multiple of 4, fixed!")
         sizeInBytes16 := (sizeInBytes16 & $FFFC) + 4
 
     'uint8_t cmd[] = {0x00, 0x00, 0x00, 0x00,
     '				 0x00, 0x00, 0x00, 0x0f,
     '				 0x00, 0x02, 0x00, 0x08};
-    bytefill(@cmd, 0, DCI_RD_CMD_LEN_IN_BYTES)
-    BYTE[@cmd][7] := $0f
-    BYTE[@cmd][9] := $02
-    BYTE[@cmd][11] := $08
+    bytefill(@dciCmd, 0, DCI_RD_CMD_LEN_IN_BYTES)
+    BYTE[@dciCmd][7] := $0f
+    BYTE[@dciCmd][9] := $02
+    BYTE[@dciCmd][11] := $08
 
     ' Check if tmp buffer is large enough
     if (rd_size > VL53L5CX_TEMP_BUFFER_SIZE)
         status |= VL53L5CX_STATUS_ERROR
     else
         ' grab basic command
-        bytemove(@tempBuffer, @cmd, DCI_RD_CMD_LEN_IN_BYTES)
+        bytemove(@tempBuffer, @dciCmd, DCI_RD_CMD_LEN_IN_BYTES)
         ' fill-in our actual request
         'cmd[0] = (uint8_t)(index >> 8)
         BYTE[@tempBuffer][0] := (dciMemAddr16 >> 8) & $ff
@@ -2039,8 +2022,9 @@ PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotO
 
         ' Request data reading from FW
         'status |= WrMulti(&(p_dev->platform), (VL53L5CX_UI_CMD_END - (uint16_t)11), cmd, sizeof(cmd))
-        address16 := VL53L5CX_UI_CMD_END - (DCI_RD_CMD_LEN_IN_BYTES) + 1
-        bStatusNotOK := writeBytes(address16, @tempBuffer, DCI_RD_CMD_LEN_IN_BYTES)
+        pktLen := DCI_RD_CMD_LEN_IN_BYTES
+        address16 := VL53L5CX_UI_CMD_END - pktLen + 1
+        bStatusNotOK := writeBytes(address16, @tempBuffer, pktLen)
         'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
         bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
@@ -2051,17 +2035,18 @@ PRI dciReadData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotO
         convertByteOrder(@tempBuffer, rd_size)
 
         ' Copy data from FW into input structure (-4 bytes to remove header)
-        repeat i from 0 to sizeInBytes16 - 1            'for (i = 0; i < (int16_t)data_size; i++)
+        'repeat i from 0 to sizeInBytes16 - 1            'for (i = 0; i < (int16_t)data_size; i++)
         '	data[i] = p_dev->temp_buffer[i + 4]
-            BYTE[pBuffer][i] := BYTE[@tempBuffer][i + 4]
+        '    BYTE[pBuffer][i] := BYTE[@tempBuffer][i + 4]
+        bytemove(@BYTE[pBuffer][0], @BYTE[@tempBuffer][0 + 4], sizeInBytes16)
 
         if bStatusNotOK
             eDvcStatus := VL53L5CX_STATUS_ERROR
         else
-            debug("dciReadData() ", uhex_byte_array(pBuffer, sizeInBytes16))
+            debug("  dciReadData(", uhex_word_(dciMemAddr16), ") ", uhex_byte_array(pBuffer, sizeInBytes16))
 
 
-PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, wr_size, WORD address16, BYTE dciHeader[DCI_WR_HEADER_SIZE_IN_BYTES], BYTE dciFooter[DCI_WR_FOOTER_SIZE_IN_BYTES]
+PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNotOK, i, wr_size, pktLen, WORD address16
 ' REF uint8_t vl53l5cx_dci_write_data(*data, index, data_size)
 '  Write 'extra data' to DCI. The data can be simple data, or casted structure.
 '  NOTE that the DCI FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ..
@@ -2070,7 +2055,7 @@ PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNot
 '    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
 
     if sizeInBytes16 & $0003 <> 0
-        debug("VL53: dciWriteData() ERROR length of ", udec(sizeInBytes16), " is NOT multiple of 4, fixed!")
+        debug("VL53: dciWriteData(", uhex_word_(dciMemAddr16), ") ERROR length of ", udec(sizeInBytes16), " is NOT multiple of 4, fixed!")
         sizeInBytes16 := (sizeInBytes16 & $FFFC) + 4
 
     eDvcStatus := VL53L5CX_STATUS_OK
@@ -2103,28 +2088,57 @@ PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNot
 
         'Copy data from structure to FW format (+4 bytes to add header)
         convertByteOrder(pBuffer, sizeInBytes16)        ' SwapBuffer(data, data_size) convert to device order
-        repeat i from sizeInBytes16 - 1 to 0        'for (i = (int16_t)data_size - (int16_t)1; i >= 0; i--)
+        'repeat i from sizeInBytes16 - 1 to 0        'for (i = (int16_t)data_size - (int16_t)1; i >= 0; i--)
         '	p_dev->temp_buffer[i + 4] = data[i]
-            BYTE[@tempBuffer][i + DCI_WR_FOOTER_SIZE_IN_BYTES] := BYTE[pBuffer][i]
+        '    BYTE[@tempBuffer][i + DCI_WR_HEADER_SIZE_IN_BYTES] := BYTE[pBuffer][i]
+        bytemove(@BYTE[@tempBuffer][0 + DCI_WR_HEADER_SIZE_IN_BYTES], @BYTE[pBuffer][0], sizeInBytes16)
 
         ' Add headers and footer
         '(void)memcpy(&p_dev->temp_buffer[0], headers, sizeof(headers))
         bytemove(@BYTE[@tempBuffer][0], @dciHeader, DCI_WR_HEADER_SIZE_IN_BYTES)
         '(void)memcpy(&p_dev->temp_buffer[data_size + (uint16_t)4], footer, sizeof(footer))
-        bytemove(@BYTE[@tempBuffer][sizeInBytes16 + 4], @dciFooter, DCI_WR_FOOTER_SIZE_IN_BYTES)
+        bytemove(@BYTE[@tempBuffer][sizeInBytes16 + DCI_WR_HEADER_SIZE_IN_BYTES], @dciFooter, DCI_WR_FOOTER_SIZE_IN_BYTES)
 
-        ' Send data to FW */
+        ' Send data to FW
         'uint16_t address = (uint16_t)VL53L5CX_UI_CMD_END - (data_size + (uint16_t)12) + (uint16_t)1
-        address16 := VL53L5CX_UI_CMD_END - (sizeInBytes16 + DCI_WR_OVERHEAD_SIZE_IN_BYTES) + 1
+        pktLen := sizeInBytes16 + DCI_WR_OVERHEAD_SIZE_IN_BYTES
+        address16 := VL53L5CX_UI_CMD_END - pktLen + 1
         'status |= WrMulti(&(p_dev->platform), address, p_dev->temp_buffer, (uint32_t)((uint32_t)data_size + (uint32_t)12))
-        bStatusNotOK := writeBytes(address16, @tempBuffer, wr_size)
+        bStatusNotOK := writeBytes(address16, @tempBuffer, pktLen)
         'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
         bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
         convertByteOrder(pBuffer, sizeInBytes16)        ' SwapBuffer(data, data_size)   (flip it back)
 
-        if  bStatusNotOK
+        if bStatusNotOK
             eDvcStatus := VL53L5CX_STATUS_ERROR
+        else
+            debug("  dciWriteData(", uhex_word_(dciMemAddr16), ") ", uhex_byte_array(pBuffer, sizeInBytes16))
+
+
+PRI dciReplaceData(pDataBffr, dciMemAddr16, dataBffrSize, pNewData, newDataSize, newDataOfst) : eDvcStatus | bStatusNotOK
+' REF uint8_t vl53l5cx_dci_replace_data(*data, index, data_size, *new_data, new_data_size, new_data_pos)
+'  Replace 'extra data' in DCI. The data can be a casted structure, or a simple array.
+'   NOTE that the FW only accept data of 32 bits. So field data can only have a size of 32, 64, 96, 128, bits ..
+'  Returns {eDvcStatus}:
+'    VL53L5CX_STATUS_OK - write success (wrote value length of {sizeInBytes16} bytes from memory at {pBuffer})
+'    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
+
+    if dataBffrSize & $0003 <> 0
+        debug("VL53: dciReadData() ERROR length of ", udec(dataBffrSize), " is NOT multiple of 4, fixed!")
+        dataBffrSize := (dataBffrSize & $FFFC) + 4
+
+    eDvcStatus := VL53L5CX_STATUS_OK
+
+    bStatusNotOK := dciReadData(pDataBffr, dciMemAddr16, dataBffrSize)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
+
+    BYTEMOVE(@BYTE[pDataBffr][newDataOfst], pNewData, newDataSize)          ' (void)memcpy(&(data[new_data_pos]), new_data, new_data_size)
+
+    bStatusNotOK |= dciWriteData(pDataBffr, dciMemAddr16, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
+
+    if bStatusNotOK
+        eDvcStatus := VL53L5CX_STATUS_ERROR
+
 
 CON '  ---- Device reads & writes ----
 

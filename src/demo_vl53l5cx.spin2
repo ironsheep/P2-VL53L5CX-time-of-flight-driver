@@ -92,7 +92,19 @@ DAT { run-time condition vars }
 
     bDataReady      long    FALSE
 
+    configuredValue long    0
+    readValue       long    0
+
 CON { -------------- MAIN -------------- }
+
+PRI checkAndShowResult(valueSet, valueRead, eDvcStatus, pMessage)
+    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+        debug("--> TEST ", zstr_(pMessage), " ERROR ", udec(eDvcStatus))
+    elseif valueSet <> valueRead
+        debug("--> TEST ", zstr_(pMessage), " ERROR readback failure: ", udec(valueSet), " <> ", udec(valueRead))
+    else
+        debug("--> TEST ", zstr_(pMessage), "  PASS: OK! ")
+    debug(" ")
 
 PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt
     '' Main entry point of MPU 9DOF demo
@@ -111,7 +123,18 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
 
     if bDvcFound
 
-        'tofSensor.setResolution(tofSensor.VL53L5CX_RESOLUTION_4X4)      ' Enable all 64 pads
+        configuredValue := tofSensor.VL53L5CX_RESOLUTION_8X8
+        tofSensor.setResolution(configuredValue)      ' Enable all 64 pads
+        eDvcStatus, readValue := tofSensor.getResolution()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setResolution()")
+
+        configuredValue := 6
+        tofSensor.setRangingFrequencyHz(configuredValue)      ' set to 6Hz
+        eDvcStatus, readValue := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setRangingFrequencyHz()")
+
+        repeat   ' hold here
+
 
         ' start ranging result display loop
         bDataReady := FALSE     ' have task wait until data is present
