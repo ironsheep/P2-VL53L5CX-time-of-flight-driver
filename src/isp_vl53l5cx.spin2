@@ -471,6 +471,7 @@ PUB setPowerMode(ePowerMode) : eDvcStatus | bStatusNotOK, bTempStatusNotOK, eCur
     ' status |= vl53l5cx_get_power_mode(p_dev, &current_power_mode)
     bStatusNotOK, eCurrPowerMode := getPowerMode()
     if (ePowerMode <> eCurrPowerMode)
+        debug("VL53: Set Power Mode")
         case ePowerMode
             VL53L5CX_POWER_MODE_WAKEUP:
                 bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)    'status |= WrByte(&(p_dev->platform), 0x7FFF, 0x00)
@@ -527,6 +528,7 @@ PUB setIntegrationTime(timeMsec32) : eDvcStatus | bStatusNotOK, integrationUs
 '' Alternatively returns {eDvcStatus}:
 ''  VL53L5CX_STATUS_INVALID_PARAM if not within the supported range
 ''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
+    debug("VL53: Set Integration Time (ms)")
     eDvcStatus := VL53L5CX_STATUS_OK
     integrationUs := timeMsec32 * 1000
 
@@ -556,7 +558,7 @@ PUB getIntegrationTime() : eDvcStatus, timeMsec32 | bStatusNotOK
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
-PUB setSharpenerPercent(percent8) : eDvcStatus | bStatusNotOK, dvcSharpener
+PUB setSharpenerPercent(percent8) : eDvcStatus | bStatusNotOK, BYTE dvcSharpener
 '' Sets a new sharpener value in percent. [0 <= {percent8} <= 99] - where 0 means disabled
 ''  Returns {eDvcStatus} of VL53L5CX_STATUS_OK if the sensor's sharpener value was changed
 ''  Change to blur more or less zones depending upon the application
@@ -568,9 +570,9 @@ PUB setSharpenerPercent(percent8) : eDvcStatus | bStatusNotOK, dvcSharpener
         status |= VL53L5CX_STATUS_INVALID_PARAM
     else
         'sharpener = (sharpener_percent * (uint8_t)255) / (uint8_t)100;
-        dvcSharpener := longFmDeviceValue((percent8 * 255) / 100)
+        dvcSharpener := (percent8 * 255) / 100
         'status |= vl53l5cx_dci_replace_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_SHARPENER, 16, (uint8_t *)&sharpener, 1, 0xD);
-        bStatusNotOK := dciReplaceData(@dciWorkBuffer, VL53L5CX_DCI_SHARPENER, 16, @dvcSharpener, 4, 0)
+        bStatusNotOK := dciReplaceData(@dciWorkBuffer, VL53L5CX_DCI_SHARPENER, 16, @dvcSharpener, 1, $0d)
 
         if bStatusNotOK
             eDvcStatus := VL53L5CX_STATUS_ERROR
@@ -2125,14 +2127,16 @@ PRI dciReplaceData(pDataBffr, dciMemAddr16, dataBffrSize, pNewData, newDataSize,
 '    VL53L5CX_STATUS_ERROR - if there was an I2C communications error
 
     if dataBffrSize & $0003 <> 0
-        debug("VL53: dciReadData() ERROR length of ", udec(dataBffrSize), " is NOT multiple of 4, fixed!")
+        debug("VL53: dciReplaceData() ERROR length of ", udec(dataBffrSize), " is NOT multiple of 4, fixed!")
         dataBffrSize := (dataBffrSize & $FFFC) + 4
 
     eDvcStatus := VL53L5CX_STATUS_OK
 
     bStatusNotOK := dciReadData(pDataBffr, dciMemAddr16, dataBffrSize)        ' status |= vl53l5cx_dci_read_data(p_dev, data, index, data_size)
+    debug("VL53: dciReplaceData() replace ", uhex_byte_array_(@BYTE[pDataBffr][newDataOfst], newDataSize))
 
     BYTEMOVE(@BYTE[pDataBffr][newDataOfst], pNewData, newDataSize)          ' (void)memcpy(&(data[new_data_pos]), new_data, new_data_size)
+    debug("VL53: dciReplaceData()    with ", uhex_byte_array_(@BYTE[pDataBffr][newDataOfst], newDataSize))
 
     bStatusNotOK |= dciWriteData(pDataBffr, dciMemAddr16, dataBffrSize)       ' status |= vl53l5cx_dci_write_data(p_dev, data, index, data_size)
 

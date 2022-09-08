@@ -97,15 +97,6 @@ DAT { run-time condition vars }
 
 CON { -------------- MAIN -------------- }
 
-PRI checkAndShowResult(valueSet, valueRead, eDvcStatus, pMessage)
-    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-        debug("--> TEST ", zstr_(pMessage), " ERROR ", udec(eDvcStatus))
-    elseif valueSet <> valueRead
-        debug("--> TEST ", zstr_(pMessage), " ERROR readback failure: ", udec(valueSet), " <> ", udec(valueRead))
-    else
-        debug("--> TEST ", zstr_(pMessage), "  PASS: OK! ")
-    debug(" ")
-
 PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt
     '' Main entry point of MPU 9DOF demo
     debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
@@ -123,18 +114,48 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
 
     if bDvcFound
 
+{
+        ' do full test and validation of all set/get methods
         configuredValue := tofSensor.VL53L5CX_RESOLUTION_8X8
-        tofSensor.setResolution(configuredValue)      ' Enable all 64 pads
+        tofSensor.setResolution(configuredValue)
         eDvcStatus, readValue := tofSensor.getResolution()                     ' Query sensor for
         checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setResolution()")
 
         configuredValue := 6
-        tofSensor.setRangingFrequencyHz(configuredValue)      ' set to 6Hz
+        tofSensor.setRangingFrequencyHz(configuredValue)
         eDvcStatus, readValue := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
         checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setRangingFrequencyHz()")
 
-        repeat   ' hold here
+        'configuredValue := tofSensor.VL53L5CX_RANG_MODE_AUTONOMOUS
+        configuredValue := tofSensor.VL53L5CX_RANG_MODE_CONTINUOUS
+        tofSensor.setRangingMode(configuredValue)
+        eDvcStatus, readValue := tofSensor.getRangingMode()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setRangingMode()")
 
+        'configuredValue := tofSensor.VL53L5CX_POWER_MODE_SLEEP
+        configuredValue := tofSensor.VL53L5CX_POWER_MODE_WAKEUP
+        tofSensor.setPowerMode(configuredValue)
+        eDvcStatus, readValue := tofSensor.getPowerMode()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setPowerMode()")
+
+        configuredValue := 7    ' timeInMs
+        tofSensor.setIntegrationTime(configuredValue)
+        eDvcStatus, readValue := tofSensor.getIntegrationTime()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setIntegrationTime()")
+
+        configuredValue := 55    ' 55%
+        tofSensor.setSharpenerPercent(configuredValue)
+        eDvcStatus, readValue := tofSensor.getSharpenerPercent()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setSharpenerPercent()")
+
+        configuredValue := tofSensor.VL53L5CX_TGT_ORDER_CLOSEST
+        'configuredValue := tofSensor.VL53L5CX_TGT_ORDER_STRONGEST
+        tofSensor.setTargetOrder(configuredValue)
+        eDvcStatus, readValue := tofSensor.getTargetOrder()                     ' Query sensor for
+        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setTargetOrder()")
+
+        repeat   ' hold here
+'}
 
         ' start ranging result display loop
         bDataReady := FALSE     ' have task wait until data is present
@@ -145,6 +166,7 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         debug("* imageResolution = ", udec_(imageResolution), udec(eDvcStatus))
         debug("* imageWidth = ", udec_(imageWidth))
 
+{
         eDvcStatus, frequencyHz8 := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
         debug("* frequencyHz8 = ", udec_(frequencyHz8), udec(eDvcStatus))
 
@@ -162,7 +184,7 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
 
         eDvcStatus, targetOrder := tofSensor.getTargetOrder()
         debug("* targetOrder = ", udec_(targetOrder), udec(eDvcStatus))
-
+'}
 
         tofSensor.startRanging()
 
@@ -220,6 +242,18 @@ PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
 
 
 CON { ------ PRIVATE (Utility) Methods ------ }
+
+PRI checkAndShowResult(valueSet, valueRead, eDvcStatus, pMessage)
+    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+        debug("--> TEST ", zstr_(pMessage), " ERROR ", udec(eDvcStatus))
+    elseif valueSet == valueRead - 1 or valueSet == valueRead + 1
+        debug("--> TEST ", zstr_(pMessage), "  PASS: OK (w/rounding err) ")
+    elseif valueSet <> valueRead
+        debug("--> TEST ", zstr_(pMessage), " ERROR readback failure: ", udec(valueSet), " <> ", udec(valueRead))
+    else
+        debug("--> TEST ", zstr_(pMessage), "  PASS: OK! ")
+    debug(" ")
+
 
 PRI locateSensor() : ok | bDevicePresent, addrFound
     ' find and configure our mpu9dof device
