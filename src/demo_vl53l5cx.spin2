@@ -199,9 +199,9 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
 
             ' is ranging, now let's show data every 5 sec
             ' Poll sensor for new data
-            eDvcStatus, bDataReturned := tofSensor.isDataReady()
+            eDvcStatus, bDataReturned := tofSensor.isDataReadyToUnload()
             if bDataReturned
-                eDvcStatus, bDataUnloaded := tofSensor.getRangingData()     ' Read distance data into array
+                eDvcStatus, bDataUnloaded := tofSensor.unloadRangingData()     ' Read distance data into array
                 if bDataUnloaded
                     ' tell consumer
                     bDataReady := TRUE
