@@ -115,6 +115,10 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
     if bDvcFound
 
 {
+        ' UNCOMMENT this block to enable wirte/read-back testing of all mode setting
+        debug(" ")  ' blank line, sortof...
+        tofSensor.enableTestingDebug(FALSE) ' set to TRUE if want to see write/read buffers during test
+
         ' do full test and validation of all set/get methods
         configuredValue := tofSensor.VL53L5CX_RESOLUTION_8X8
         tofSensor.setResolution(configuredValue)
@@ -154,36 +158,49 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         eDvcStatus, readValue := tofSensor.getTargetOrder()                     ' Query sensor for
         checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setTargetOrder()")
 
-        repeat   ' hold here
+        debug("* STOPPED for evaluation of display")
+        repeat   ' hold here for eval
 '}
 
         ' start ranging result display loop
         bDataReady := FALSE     ' have task wait until data is present
         cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
 
+        waitms(500) ' let task announce itself in debug, then proceed
+
+        configuredValue := tofSensor.VL53L5CX_RESOLUTION_4X4
+        tofSensor.setResolution(configuredValue)
+
         eDvcStatus, imageResolution := tofSensor.getResolution()                     ' Query sensor for
         imageWidth := sqrt imageResolution                               ' Calculate printing width
         debug("* imageResolution = ", udec_(imageResolution), udec(eDvcStatus))
         debug("* imageWidth = ", udec_(imageWidth))
 
+        tofSensor.enableIODebug(TRUE) ' set to TRUE if want to see write/read buffers during test
+
 {
+        ' UNCOMMENT this block to see initial/default driver values
+        tofSensor.enableTestingDebug(FALSE) ' set to TRUE if want to see write/read buffers during test
         eDvcStatus, frequencyHz8 := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
-        debug("* frequencyHz8 = ", udec_(frequencyHz8), udec(eDvcStatus))
+        showReadValue(@"frequencyHz8", frequencyHz8, eDvcStatus)
 
         eDvcStatus, eRangingMode := tofSensor.getRangingMode()                     ' Query sensor for
-        debug("* eRangingMode = ", udec_(eRangingMode), udec(eDvcStatus))
+        showReadValue(@"eRangingMode", eRangingMode, eDvcStatus)
 
         eDvcStatus, ePowerMode := tofSensor.getPowerMode()
-        debug("* ePowerMode = ", udec_(ePowerMode), udec(eDvcStatus))
+        showReadValue(@"ePowerMode", ePowerMode, eDvcStatus)
 
         eDvcStatus, timeMsec32 := tofSensor.getIntegrationTime()
-        debug("* timeMsec32 = ", udec_(timeMsec32), udec(eDvcStatus))
+        showReadValue(@"timeMsec32", timeMsec32, eDvcStatus)
 
         eDvcStatus, percent8 := tofSensor.getSharpenerPercent()
-        debug("* percent8 = ", udec_(percent8), udec(eDvcStatus))
+        showReadValue(@"percent8", percent8, eDvcStatus)
 
         eDvcStatus, targetOrder := tofSensor.getTargetOrder()
-        debug("* targetOrder = ", udec_(targetOrder), udec(eDvcStatus))
+        showReadValue(@"targetOrder", targetOrder, eDvcStatus)
+
+        debug("* STOPPED for evaluation of display")
+        repeat  ' hold here for eval
 '}
 
         tofSensor.startRanging()
@@ -216,15 +233,16 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
 
     repeat  ' halt here for now
 
+
 PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
 ' TASK: TOF Listener
 
     repeat  ' forever
 
-        debug("* Waiting for data...")
+        debug("* DTA-TSK: Waiting for data...")
         ' wait for data to be ready
         repeat until bDataReady == TRUE ' hold until BG task displays it
-        debug("* Have data, processing")
+        debug("* DTA-TSK: Have data, processing")
 
         ' The ST library returns the data transposed from zone mapping shown in datasheet
         ' Pretty-print data with increasing y, decreasing x to reflect reality
@@ -236,12 +254,18 @@ PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
             debug("- ", udec(y), ": ", udec_word_array_(@samples, 8))
         debug(" ")
 
-        debug("* Done with data")
+        debug("* DTA-TSK: Done with data")
         bDataReady := FALSE
 
 
 
 CON { ------ PRIVATE (Utility) Methods ------ }
+
+PRI showReadValue(pMessage, nValue, nDvcStatus)
+    if nDvcStatus == 0
+        debug(" * ", zstr_(pMessage), " = ", udec_(nValue))
+    else
+        debug(" * ", zstr_(pMessage), " = ", udec_(nValue), udec(nDvcStatus))
 
 PRI checkAndShowResult(valueSet, valueRead, eDvcStatus, pMessage)
     if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
@@ -261,11 +285,10 @@ PRI locateSensor() : ok | bDevicePresent, addrFound
     tofSensor.enableDebug(TRUE)
     bDevicePresent := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
     if bDevicePresent
-        debug("* ID device address...")
         addrFound := tofSensor.getI2CAddress()
         ok := true
         if(addrFound <> tofSensor.DVC_NOT_FOUND)
-            debug("* Found Addr-`(addrFound)")
+            debug("* Found at i2c addr: ", uhex_byte_(addrFound))
         else
             debug("* ERROR: Found no devices")
             ok := false
