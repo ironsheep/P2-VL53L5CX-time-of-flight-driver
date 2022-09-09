@@ -115,7 +115,9 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
     if bDvcFound
 
 {
-        ' UNCOMMENT this block to enable wirte/read-back testing of all mode setting
+        ' --------------------------------------------------------------------------
+        '  UNCOMMENT this block to enable write/read-back testing of all mode setting
+        ' --------------------------------------------------------------------------
         debug(" ")  ' blank line, sortof...
         tofSensor.enableTestingDebug(FALSE) ' set to TRUE if want to see write/read buffers during test
 
@@ -179,7 +181,9 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         tofSensor.enableIODebug(TRUE) ' set to TRUE if want to see write/read buffers during test
 
 {
-        ' UNCOMMENT this block to see initial/default driver values
+        ' --------------------------------------------------------------------------
+        '  UNCOMMENT this block to see initial/default driver values
+        ' --------------------------------------------------------------------------
         tofSensor.enableTestingDebug(FALSE) ' set to TRUE if want to see write/read buffers during test
         eDvcStatus, frequencyHz8 := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
         showReadValue(@"frequencyHz8", frequencyHz8, eDvcStatus)

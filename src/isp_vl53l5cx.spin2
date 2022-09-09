@@ -484,12 +484,12 @@ PUB setPowerMode(ePowerMode) : eDvcStatus | bStatusNotOK, bTempStatusNotOK, eCur
             VL53L5CX_POWER_MODE_WAKEUP:
                 bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)    'status |= WrByte(&(p_dev->platform), 0x7FFF, 0x00)
                 bStatusNotOK |= writeByte($0009, $04)                                       ' status |= WrByte(&(p_dev->platform), 0x09, 0x04)
-                    bStatusNotOK |= pollForAnswer(1, 0, $0006, $01, $01)   ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0x01, 1)
+                    bStatusNotOK |= pollForAnswer(1, 0, VL53L5CX_REG_GO2_STATUS0, $01, $01) ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0x01, 1)
 
             VL53L5CX_POWER_MODE_SLEEP:
                 bStatusNotOK := writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)    'status |= WrByte(&(p_dev->platform), 0x7FFF, 0x00)
                 bStatusNotOK |= writeByte($0009, $02)                                       ' status |= WrByte(&(p_dev->platform), 0x09, 0x02)
-                    bStatusNotOK |= pollForAnswer(1, 0, $0006, $01, $00)   ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0x01, 0)
+                    bStatusNotOK |= pollForAnswer(1, 0, VL53L5CX_REG_GO2_STATUS0, $01, $00) ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0x01, 0)
 
             other:
                 eDvcStatus := VL53L5CX_STATUS_INVALID_PARAM
@@ -786,16 +786,16 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
     'debug("CHP: ", uhex_long(auto_stop_flag), uhex_byte_array(@auto_stop_flag, 4))
 
     if (longDeviceValue(auto_stop_flag) <> $4FF)
-        bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)        ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
+        bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)            ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
 
         ' Provoke MCU stop
-        bStatusNotOK |= writeByte($0015, $16)                                             ' status |= WrByte(&(p_dev->platform), 0x15, 0x16)
-        bStatusNotOK |= writeByte($0014, $01)                                             ' status |= WrByte(&(p_dev->platform), 0x14, 0x01)
+        bStatusNotOK |= writeByte($0015, $16)                                               ' status |= WrByte(&(p_dev->platform), 0x15, 0x16)
+        bStatusNotOK |= writeByte($0014, $01)                                               ' status |= WrByte(&(p_dev->platform), 0x14, 0x01)
 
         ' Poll for G02 status 0 MCU stop
         timeout := 0
         repeat
-            bTempStatusNotOK, tmp := readByte($0006)                                       ' status |= RdByte(&(p_dev->platform), 0x6, &tmp)
+            bTempStatusNotOK, tmp := readByte(VL53L5CX_REG_GO2_STATUS0)                     ' status |= RdByte(&(p_dev->platform), 0x6, &tmp)
             bStatusNotOK |= bTempStatusNotOK
             WaitMs(10)
             timeout++
@@ -810,11 +810,11 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
         bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)            ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
 
         ' Undo MCU stop
-        bStatusNotOK |= writeByte($0014, $00)                                                 ' status |= WrByte(&(p_dev->platform), 0x14, 0x00)
-        bStatusNotOK |= writeByte($0015, $00)                                                 ' status |= WrByte(&(p_dev->platform), 0x15, 0x00)
+        bStatusNotOK |= writeByte($0014, $00)                                               ' status |= WrByte(&(p_dev->platform), 0x14, 0x00)
+        bStatusNotOK |= writeByte($0015, $00)                                               ' status |= WrByte(&(p_dev->platform), 0x15, 0x00)
 
         ' Stop xshut bypass
-        bStatusNotOK |= writeByte($0009, $04)                                                 ' status |= WrByte(&(p_dev->platform), 0x09, 0x04)
+        bStatusNotOK |= writeByte($0009, $04)                                               ' status |= WrByte(&(p_dev->platform), 0x09, 0x04)
 
         bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)               ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
@@ -1044,7 +1044,13 @@ CON '  --- Tunable DRIVER CONSTANTs ---
 '   transaction, and also the total memory size (a lower number of targets per
 '   zone means a lower RAM). The value must be between 1 and 4.
 '  (driver tunable)
-    VL53L5CX_NB_TGT_PER_ZONE	    = 1
+    VL53L5CX_NB_TGT_PER_ZONE     = 1
+    ' Inner internal number of targets.
+    ' NOTE if you set VL53L5CX_NB_TGT_PER_ZONE > 1 then
+    '   set VL53L5CX_FW_NBTAR_RANGING = VL53L5CX_NB_TGT_PER_ZONE
+    '   if VL53L5CX_NB_TGT_PER_ZONE == 1 then VL53L5CX_FW_NBTAR_RANGING = 2
+    VL53L5CX_FW_NBTAR_RANGING   = 2
+
 
 ' VL53L5CX_USE_RAW_FORMAT can be used to avoid data conversion upon sensor unload.
 '  By default there is a conversion during unload from the sensor. Setting this to TRUE
@@ -1255,7 +1261,7 @@ PRI initDriver()
         motSize := 144
 
     ' maxResultsSize indicates the maximum size used by output through I2C.
-    '  Value 40 corresponds to headers + meta-data + common-data and 8 corresponds to the footer.
+    '  Value 40 corresponds to headers + meta-data + common-data and 8 corresponds to the footer_ofst.
     maxResultsSize := (40 + ambSize + spadSize + ntarSize + spsSize + sigrSize + distSize + rflestSize + staSize + motSize + 8)
 
     if maxResultsSize > VL53L5CX_TEMP_BUFFER_SIZE
@@ -1289,15 +1295,15 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
     bStatusNotOK |= writeByte($0103, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x0103, 0x01)
     bStatusNotOK |= writeByte($000C, 0)                                        ' status |= WrByte(&(p_dev->platform), 0x000C, 0x00)
     bStatusNotOK |= writeByte($000F, $43)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x43)
-    waitms(1)                                                               ' status |= WaitMs(&(p_dev->platform), 1)
+    waitms(1)                                                                  ' status |= WaitMs(&(p_dev->platform), 1)
 
     bStatusNotOK |= writeByte($000F, $40)                                      ' status |= WrByte(&(p_dev->platform), 0x000F, 0x40)
     bStatusNotOK |= writeByte($000A, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000A, 0x01)
-    waitms(100)                                                             ' status |= WaitMs(&(p_dev->platform), 100)
+    waitms(100)                                                                ' status |= WaitMs(&(p_dev->platform), 100)
 
     ' Wait for sensor booted (several ms required to get sensor ready )
     bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_CONFIG)   ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x00)
-    bStatusNotOK |= pollForAnswer(1, 0, $0006, $FF, 1)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 1)
+    bStatusNotOK |= pollForAnswer(1, 0, VL53L5CX_REG_GO2_STATUS0, $FF, 1)      ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 1)
 
     bStatusNotOK |= writeByte($000E, 1)                                        ' status |= WrByte(&(p_dev->platform), 0x000E, 0x01)
     bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
@@ -1360,7 +1366,7 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
     bStatusNotOK |= writeByte($0B, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x00)
     bStatusNotOK |= writeByte($0C, 0)                                          ' status |= WrByte(&(p_dev->platform), 0x0C, 0x00)
     bStatusNotOK |= writeByte($0B, 1)                                          ' status |= WrByte(&(p_dev->platform), 0x0B, 0x01)
-    bStatusNotOK |= pollForAnswer(1, 0, $0006, $ff, $00)                         ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
+    bStatusNotOK |= pollForAnswer(1, 0, VL53L5CX_REG_GO2_STATUS0, $ff, $00)    ' status |= _vl53l5cx_poll_for_answer(p_dev, 1, 0, 0x06, 0xff, 0x00)
     bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)      ' status |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
 
     'debug(">>  CHECK: VL53L5CX_GET_NVM_CMD_LEN = ", udec_(VL53L5CX_GET_NVM_CMD_LEN))
@@ -1435,41 +1441,38 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
 
     ' Data extrapolation is required for 4X4 offset
     if eResolution == VL53L5CX_RESOLUTION_4X4
-        BYTEMOVE(@BYTE[@tempBuffer][$10], @dss_4x4Ofs, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss_4x4Ofs, sizeof(dss_4x4Ofs))
+        BYTEMOVE(@BYTE[@tempBuffer][$10], @dss4x4_ofst, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss4x4_ofst, sizeof(dss4x4_ofst))
         ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t or LONGs)
         longReplaceDeviceValues(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
         ' extract signal grid
-        LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$3c], SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
+        LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$03c], SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
         'debug("VL53: signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
+
         ' extract range grid
         WORDMOVE(@rangeGrid16, @BYTE[@tempBuffer][$140], RANGE_GRID_SIZE_WORDS)   ' (void)memcpy(range_grid, &(p_dev->temp_buffer[0x140]), sizeof(range_grid))
         'debug("VL53: rangeGrid16(", udec(RANGE_GRID_SIZE_WORDS), ") ", uhex_word_array(@rangeGrid16, RANGE_GRID_SIZE_WORDS))
 
-        'FIXME: verify this code and fix in both places!
+        ' average 2x2 values (of 8x8) into single value in (4x4)
         repeat j from 0 to 4 - 1                                                    ' for (j = 0 j < (int8_t)4 j++)
             repeat i from 0 to 4 - 1                                                ' for (i = 0 i < (int8_t)4 i++)
                 idx4x4 := i + (4 * j)
                 idx8x8 := (2 * i) + (16 * j)
                 {
-                    ' convert 8x8 into 4x4 using averages?!!
-                    ' average 4 values into 1 ?
                     LONG[@signal_grid][i + (4 * j)] :=
                         (LONG[@signal_grid][(2 * i) + (16 * j) + 0] +
                         LONG[@signal_grid][(2 * i) + (16 * j) + 1] +
                         LONG[@signal_grid][(2 * i) + (16 * j) + 8] +
                         LONG[@signal_grid][(2 * i) + (16 * j) + 9]) / 4
-
-                    ' convert 8x8 into 4x4 using averages?!!
-                    ' average 4 values into 1 ?
+                }
+                LONG[@signalGrid32][idx4x4] := (LONG[@signalGrid32][idx8x8 + 0] + LONG[@signalGrid32][idx8x8 + 1] + LONG[@signalGrid32][idx8x8 + 8] + LONG[@signalGrid32][idx8x8 + 9]) / 4
+                {
                     WORD[@range_grid][i + (4 * j)] :=
                         (WORD[@range_grid][(2 * i) + (16 * j) + 0] +
                         WORD[@range_grid][(2 * i) + (16 * j) + 1] +
                         WORD[@range_grid][(2 * i) + (16 * j) + 8] +
                         WORD[@range_grid][(2 * i) + (16 * j) + 9]) / 4
                 '}
-                ' average 2x2 values (of 8x8) into single value of (4x4)
-                LONG[@signalGrid32][idx4x4] := (LONG[@signalGrid32][idx8x8 + 0] + LONG[@signalGrid32][idx8x8 + 1] + LONG[@signalGrid32][idx8x8 + 8] + LONG[@signalGrid32][idx8x8 + 9]) / 4
                 WORD[@rangeGrid16][idx4x4] := (WORD[@rangeGrid16][idx8x8 + 0] + WORD[@rangeGrid16][idx8x8 + 1] + WORD[@rangeGrid16][idx8x8 + 8] + WORD[@rangeGrid16][idx8x8 + 9]) / 4
 
         ' clear rangeGrid16 leaving only the new 4x4 values [0-15]
@@ -1481,7 +1484,7 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
         'debug("VL53: 2 rangeGrid16(", udec(RANGE_GRID_SIZE_WORDS), ") ", uhex_word_array(@rangeGrid16, RANGE_GRID_SIZE_WORDS))
 
         ' replace signal grid
-        LONGMOVE(@BYTE[@tempBuffer][$3c], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
+        LONGMOVE(@BYTE[@tempBuffer][$03c], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(&(p_dev->temp_buffer[0x3C]), signal_grid, sizeof(signal_grid))
         ' replace range grid
         WORDMOVE(@BYTE[@tempBuffer][$140], @rangeGrid16, RANGE_GRID_SIZE_WORDS)   ' (void)memcpy(&(p_dev->temp_buffer[0x140]), range_grid, sizeof(range_grid))
 
@@ -1490,10 +1493,10 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
 
     ' shift buffer up 8 bytes ?! (removing first 8 bytes, leaving copy of last 8 bytes!)
     '  FIXME: this seems broken as we are moving up 8 but our length is (max - 4) ?? this should be max - 8, right?
-    repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                        ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
-        BYTE[@tempBuffer][k] := BYTE[@tempBuffer][k + 8]                      ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
+    repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                    ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
+        BYTE[@tempBuffer][k] := BYTE[@tempBuffer][k + 8]                        ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
 
-    BYTEMOVE(@BYTE[@tempBuffer][$1e0], @footer, 8)                               ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
+    BYTEMOVE(@BYTE[@tempBuffer][$1e0], @footer_ofst, 8)                         ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer_ofst, 8)
 
     ' status |= WrMulti(&(p_dev->platform), 0x2e18, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
     bStatusNotOK := writeBytes($2e18, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
@@ -1513,25 +1516,24 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
     debug("VL53: Send XTALK Data")
 
     ' get copy of Xtalk-Buffer 8x8 image
-    BYTEMOVE(@tempBuffer, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)    ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
+    BYTEMOVE(@tempBuffer, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
 
     ' Data extrapolation is required for 4X4 Xtalk
     if (eResolution == VL53L5CX_RESOLUTION_4X4)
         ' overlay new values into tempBuffer
-        BYTEMOVE(@BYTE[@tempBuffer][$08], @res4x4, 8)                      ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4, sizeof(res4x4))
-        BYTEMOVE(@BYTE[@tempBuffer][$20], @dss_4x4, 8)                     ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss_4x4, sizeof(dss_4x4))
+        BYTEMOVE(@BYTE[@tempBuffer][$008], @res4x4_xtalk, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x8]), res4x4_xtalk, sizeof(res4x4_xtalk))
+        BYTEMOVE(@BYTE[@tempBuffer][$020], @dss4x4_xtalk, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x020]), dss4x4_xtalk, sizeof(dss4x4_xtalk))
 
         ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t's/LONG's)
         longReplaceDeviceValues(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
 
         ' extract copy of ordered signal grid
-        LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$34], SIGNAL_GRID_SIZE_LONGS)                ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
+        LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$034], SIGNAL_GRID_SIZE_LONGS)   ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x34]), sizeof(signal_grid))
         'debug("VL53: signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
 
-        'FIXME: verify this code and fix in both places!
-        ' recalculate values within signal grid
-        repeat j from 0 to 4 - 1                                                ' for (j = 0 j < (int8_t)4 j++)
-            repeat i from 0 to 4 - 1                                            ' for (i = 0 i < (int8_t)4 i++)
+        ' average 2x2 values (of 8x8) into single value in (4x4)
+        repeat j from 0 to 4 - 1                                                    ' for (j = 0 j < (int8_t)4 j++)
+            repeat i from 0 to 4 - 1                                                ' for (i = 0 i < (int8_t)4 i++)
                 idx4x4 := i + (4 * j)
                 idx8x8 := (2 * i) + (16 * j)
                 {
@@ -1544,21 +1546,21 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
                 LONG[@signalGrid32][idx4x4] := (LONG[@signalGrid32][idx8x8 + 0] + LONG[@signalGrid32][idx8x8 + 1] + LONG[@signalGrid32][idx8x8 + 8] + LONG[@signalGrid32][idx8x8 + 9]) / 4
 
         ' clear signalGrid32 leaving only the new 4x4 values [0-15]
-        LONGFILL(@LONG[@signalGrid32][16], 0, 48)                                  ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
+        LONGFILL(@LONG[@signalGrid32][16], 0, 48)                                   ' (void)memset(&signal_grid[0x10], 0, (uint16_t)192)
 
         'debug("VL53: 2 signalGrid32(", udec(SIGNAL_GRID_SIZE_LONGS), ") ", uhex_long_array(@signalGrid32, SIGNAL_GRID_SIZE_LONGS))
 
         ' copy updated signal grid back into temp buffer
-        LONGMOVE(@BYTE[@tempBuffer][$34], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)                ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
+        LONGMOVE(@BYTE[@tempBuffer][$034], @signalGrid32, SIGNAL_GRID_SIZE_LONGS)   ' (void)memcpy(&(p_dev->temp_buffer[0x34]), signal_grid, sizeof(signal_grid))
 
         ' convert tempBuffer back into device byte-order - NOTE: yep, this 2nd call reversed out the changes (buffer is known to be an array of uint32_t or LONGs)
         longReplaceDeviceValues(@tempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)
 
-        ' copy profile_4x4 into temp buffer
-        BYTEMOVE(@BYTE[@tempBuffer][$134], @profile_4x4, 4)                ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile_4x4, sizeof(profile_4x4))
+        ' copy profile4x4_xtalk into temp buffer
+        BYTEMOVE(@BYTE[@tempBuffer][$134], @profile4x4_xtalk, 4)                    ' (void)memcpy(&(p_dev->temp_buffer[0x134]), profile4x4_xtalk, sizeof(profile4x4_xtalk))
 
         ' clear 4 bytes within temp buffer
-        BYTEFILL(@BYTE[@tempBuffer][$078], 0, 4)                           ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
+        BYTEFILL(@BYTE[@tempBuffer][$078], 0, 4)                                    ' (void)memset(&(p_dev->temp_buffer[0x078]), 0, (uint32_t)4 * sizeof(uint8_t))
 
     ' write temp buffer out to device
     ' status |= WrMulti(&(p_dev->platform), 0x2cf8, p_dev->temp_buffer, VL53L5CX_XTALK_BUFFER_SIZE)
@@ -1641,12 +1643,12 @@ CON { Device Registers - best we can tell }
 
     VL53L5CX_REG_DVC_ADDR       = $0004
 
+    VL53L5CX_REG_GO2_STATUS0    = $0006
+    VL53L5CX_REG_GO2_STATUS1    = $0007
+
     TMP_SIZE_IN_BYTES           = 30
 
 CON { fixed driver values }
-
-    VL53L5CX_T1_FW_NBTAR_RANGING = 2
-    VL53L5CX_FW_NBTAR_RANGING = VL53L5CX_NB_TGT_PER_ZONE
 
     ' Inner Macro for API. Not for user, only for development.
 
@@ -2109,7 +2111,7 @@ PRI dciWriteData(pBuffer, dciMemAddr16, sizeInBytes16) : eDvcStatus | bStatusNot
         '    BYTE[@tempBuffer][i + DCI_WR_HEADER_SIZE_IN_BYTES] := BYTE[pBuffer][i]
         bytemove(@BYTE[@tempBuffer][0 + DCI_WR_HEADER_SIZE_IN_BYTES], @BYTE[pBuffer][0], sizeInBytes16)
 
-        ' Add headers and footer
+        ' Add headers and footer\
         '(void)memcpy(&p_dev->temp_buffer[0], headers, sizeof(headers))
         bytemove(@BYTE[@tempBuffer][0], @dciHeader, DCI_WR_HEADER_SIZE_IN_BYTES)
         '(void)memcpy(&p_dev->temp_buffer[data_size + (uint16_t)4], footer, sizeof(footer))
@@ -2258,13 +2260,14 @@ PRI readBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAck
 
 DAT { fixed driver tables }
 
-    '  start ranging data
-    dss_4x4Ofs      BYTE    $0F, $04, $04, $00, $08, $10, $10, $07  ' literals to load to device
-    footer          BYTE    $00, $00, $00, $0F, $03, $01, $01, $E4  ' literals to load to device
+    '  when loading offset
+    dss4x4_ofst         BYTE    $0F, $04, $04, $00, $08, $10, $10, $07  ' literals to load to device
+    footer_ofst         BYTE    $00, $00, $00, $0F, $03, $01, $01, $E4  ' literals to load to device
 
-    res4x4          BYTE    $0F, $04, $04, $17, $08, $10, $10, $07  ' literals to load to device
-    dss_4x4         BYTE    $00, $78, $00, $08, $00, $00, $00, $08  ' literals to load to device
-    profile_4x4     BYTE    $A0, $FC, $01, $00                      ' literals to load to device
+    '  when loading xtalk
+    res4x4_xtalk        BYTE    $0F, $04, $04, $17, $08, $10, $10, $07  ' literals to load to device
+    dss4x4_xtalk        BYTE    $00, $78, $00, $08, $00, $00, $00, $08  ' literals to load to device
+    profile4x4_xtalk    BYTE    $A0, $FC, $01, $00                      ' literals to load to device
 
 ' This buffer contains the VL53L5CX default Xtalk data.
     VL53L5CX_DEFAULT_XTALK          BYTE     $9f,  $d8,  $00,  $c0, $03,  $20,  $09,  $60, $0b,  $08,  $08,  $17, $08,  $08,  $08,  $03     ' $00000 - $0000f
