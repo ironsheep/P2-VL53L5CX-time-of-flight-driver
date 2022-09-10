@@ -164,7 +164,7 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         repeat   ' hold here for eval
 '}
 
-        configuredValue := tofSensor.VL53L5CX_RESOLUTION_4X4
+        configuredValue := tofSensor.VL53L5CX_RESOLUTION_8X8
         tofSensor.setResolution(configuredValue)
 
         eDvcStatus, imageResolution := tofSensor.getResolution()                     ' Query sensor for
@@ -179,7 +179,7 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
         waitms(500) ' let task announce itself in debug, then proceed
 
-        tofSensor.enableIODebug(TRUE) ' set to TRUE if want to see write/read buffers during test
+        tofSensor.enableIODebug(FALSE) ' set to TRUE if want to see write/read buffers during test
 {
         ' --------------------------------------------------------------------------
         '  UNCOMMENT this block to see initial/default driver values
@@ -270,7 +270,15 @@ PRI taskMonitorRanging(imageWidth) | x, y, BYTE samples[8]
                 samples[x] := tofSensor.sampleTargetStatus((y * imageWidth) + x)
             debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
         debug(" ")
-
+'{
+        debug(" -- NbTgtDetected")
+        repeat y from 0 to imageWidth - 1
+            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
+            repeat x from imageWidth -1 to 0 step -1
+                samples[x] := tofSensor.sampleNbTgtDetected((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
+        debug(" ")
+'}
         debug("* DTA-TSK: Done with data")
         bDataReady := FALSE
 
