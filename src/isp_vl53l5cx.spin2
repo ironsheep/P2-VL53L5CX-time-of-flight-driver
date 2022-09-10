@@ -2190,22 +2190,13 @@ CON { Device reads & writes }
 PRI writeByte(regAddr16, dataValue8) : ok | ackbit, BYTE requestPlusByte[4]
     ' Write {dataValue8} to register {regAddr16}
     i2c_bus.start()
+    ' write block
     BYTE[@requestPlusByte][0] := (dvcI2CAddr & $fe) | I2C_MODE_WRITE
     BYTE[@requestPlusByte][1] := regAddr16.byte[1]
     BYTE[@requestPlusByte][2] := regAddr16.byte[0]
     BYTE[@requestPlusByte][3] := dataValue8
     ackBit := i2c_bus.wr_block(@requestPlusByte, 4)
     ok |= ackbit
-    {
-    ' byte by byte
-    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
-    ackBit := i2c_bus.write(dataValue8)
-    ok |= ackbit
-    '}
     i2c_bus.stop()
 
     if ok <> 0
@@ -2225,24 +2216,9 @@ PRI writeBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAc
     BYTE[@request][2] := regAddr16.byte[0]
     ackBit := i2c_bus.wr_block(@request, 3)
     ok |= ackbit
-    {
-    ' byte by byte
-    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
-    ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit
-    ackBit := i2c_bus.write(regAddr16.byte[0])
-    ok |= ackbit
-    '}
     ' write block
     ackBit := i2c_bus.wr_block(pByteStore, byteCount)
     ok |= ackbit
-{
-    ' loop byte by byte
-    repeat byteIndex from 0 to byteCount - 1
-        'endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
-        ackBit := i2c_bus.write(BYTE [pByteStore][byteIndex])
-        ok |= ackbit
-'}
     i2c_bus.stop()
 
     if ok <> 0
@@ -2261,12 +2237,6 @@ PRI readByte(regAddr16) : ok, result8 | ackbit, BYTE request[3]
     BYTE[@request][2] := regAddr16.byte[0]
     ackBit := i2c_bus.wr_block(@request, 3)
     ok |= ackbit
-    {
-    ' byte by byte
-    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
-    ok |= ackbit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit := i2c_bus.write(regAddr16.byte[0])
-    '}
     i2c_bus.stop()
 
     i2c_bus.start()
@@ -2284,9 +2254,6 @@ PRI readBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAck
     ' Read {byteCount} BYTEs starting from register {regAddr16} - byte from {regAddr16},
     '  byte from {regAddr16}+1, byte from {regAddr16}+2, byte from {regAddr16}+3 and so on
     '  placing them into BYTE array located at {pByteStore}
-
-    'if bShowDebug
-    '    term.fstr2(string("* readBytes(0x%.02x, ct=%d)' 10), regAddr16, byteCount)
     i2c_bus.start()
     ' write block
     BYTE[@request][0] := (dvcI2CAddr & $fe) | I2C_MODE_WRITE
@@ -2294,27 +2261,12 @@ PRI readBytes(regAddr16, pByteStore, byteCount) : ok | ackbit, byteIndex, endAck
     BYTE[@request][2] := regAddr16.byte[0]
     ackBit := i2c_bus.wr_block(@request, 3)
     ok |= ackbit
-    {
-    ' byte by byte
-    ok := ackBit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_WRITE)
-    ok |= ackBit := i2c_bus.write(regAddr16.byte[1])
-    ok |= ackbit := i2c_bus.write(regAddr16.byte[0])
-    '}
     i2c_bus.stop()
-'    waitus(1)
+
     i2c_bus.start()
     ok |= ackbit := i2c_bus.write((dvcI2CAddr & $fe) | I2C_MODE_READ)
     ' read block
     i2c_bus.rd_block(pByteStore, byteCount, i2c_bus.NAK)
-{
-    ' loop byte by byte
-    repeat byteIndex from 0 to byteCount - 1
-        endAckNak := (byteIndex == byteCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
-        result8 := i2c_bus.read(endAckNak)    ' use NAK on last and let's use stop
-        'result8 := i2c_bus.read(i2c_bus.ACK)    ' was ACK or NAK on last but let's use stop
-        result8 := result8 signx 7
-        BYTE [pByteStore][byteIndex] := result8
-'}
     i2c_bus.stop()
     if ok <> 0
         debug("readBytes() ERROR ", uhex(ok), uhex_word(regAddr16))
