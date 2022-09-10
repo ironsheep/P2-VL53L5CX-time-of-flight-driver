@@ -701,6 +701,9 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     LONG[@output][10] := targetStatusBh
     LONG[@output][11] := motionDetectBh
 
+    debug("VL53: output_bh_enable[] = ", uhex_long_array_(@output_bh_enable, 4))
+    debug("VL53: output[] = ", uhex_long_array_(@output, 12))
+
     eDvcStatus, nResolution8 := getResolution()     ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
     streamcount := 255                              ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
 
@@ -765,15 +768,15 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
 
     '  Read ui range data content and compare if data size is the correct one
     ' TEMPORARY code something seen in v1.4 handler
-	' status |= vl53l5cx_dci_read_data(p_dev, (uint8_t*)p_dev->temp_buffer, 0x5440, 12);
+    ' status |= vl53l5cx_dci_read_data(p_dev, (uint8_t*)p_dev->temp_buffer, 0x5440, 12);
     bStatusNotOK := dciReadData(@dciWorkBuffer, $5440, 12)
-	'(void)memcpy(&tmp, &(p_dev->temp_buffer[0x8]), sizeof(tmp))
+    '(void)memcpy(&tmp, &(p_dev->temp_buffer[0x8]), sizeof(tmp))
     readSize := LONG[@BYTE[@dciWorkBuffer][8]]
-	if readSize <> dataReadSize
+    if readSize <> dataReadSize
     ' FIXME: these read back the same but compare badly!!! WHY!!!
         ' DEBUG says they are the same value!!!!
         debug("VL53: readback check fail ", udec(readSize), "/", uhex_(readSize), " vs. ", udec(dataReadSize), "/", uhex_(dataReadSize))
-		'eDvcStatus |= VL53L5CX_STATUS_ERROR
+        'eDvcStatus |= VL53L5CX_STATUS_ERROR
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
@@ -894,8 +897,11 @@ PUB isDataReadyToUnload() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dat
             debug("VL53: LOCK - good data!")
             REPEAT
     '}
+CON
 
-PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bhType, bhIdx, bhSize
+    DEBUG_INDEX_MAX = 50000
+
+PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, bfrByteIdx, entryIdx, entrySubIdx, pData, msize, bhType, bhIdx, bhSize, nextBHUnion
 '' Retrieve ranging data from the sensor. Return T/F (where T means data was retrieved) when {eDvcStatus} is VL53L5CX_STATUS_OK
 '' Alternatively returns {eDvcStatus}:
 ''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
@@ -913,11 +919,17 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize,
     'SwapBuffer(p_dev->temp_buffer, (uint16_t)p_dev->data_read_size)
     longReplaceDeviceValues(@tempBuffer, dataReadSize)
 
+    'debug("  -- header +1 long: ", uhex_long_array(@tempBuffer, 5))
+
     ' Start conversion at position 16 to avoid headers
-    'for (i = (uint32_t)16 i < (uint32_t)p_dev->data_read_size i += (uint32_t)4)
-    repeat i from 16 to dataReadSize - 1 step 4
+    'for (i = (uint32_t)16 i < (uint32_t)p_dev->data_read_size i += (uint32_t)4) [i is now bfrByteIdx]
+    bfrByteIdx := 16
+    repeat
         'bh_ptr = (union Block_header *)&(p_dev->temp_buffer[i])
-        bhType, bhIdx, bhSize := longToBHValues(LONG[@BYTE[@tempBuffer][i]])
+        nextBHUnion := LONG[@BYTE[@tempBuffer][bfrByteIdx]]
+        'if bfrByteIdx < DEBUG_INDEX_MAX
+        '    debug("  -- ", udec(bfrByteIdx), uhex_long(nextBHUnion))
+        bhType, bhIdx, bhSize := longToBHValues(nextBHUnion)
         'if ((bh_ptr->type > (uint32_t)0x1) && (bh_ptr->type < (uint32_t)0xd))
         if bhType > $01 and bhType < $0d
             'msize = bh_ptr->type * bh_ptr->size
@@ -926,57 +938,65 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize,
             ' msize = bh_ptr->size
             msize := bhSize
 
+        'if bfrByteIdx < DEBUG_INDEX_MAX
+        '    debug(" -- ", uhex_word(bhIdx), udec(bhType), udec(bhSize), " -> ", udec(msize))
+        '    if bhIdx < $5000 and not bhType == $0E
+        '        debugStopWithMessage(@"ERROR!  bad: BH_index", bhIdx)
+
+        if bhType == $0E and bhIdx == $0000
+        '    debug(" ----  good table end ----")
+            quit
         ' switch (bh_ptr->idx)
+        pData := @BYTE[@tempBuffer][bfrByteIdx + 4]     ' pointer to data bytes returned from sensor
         case bhIdx
             ambientRateIdx:
                 if enaAmbientPerSpad
                     ' (void)memcpy(p_results->ambient_per_spad, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    ' W/O CONVERT: bytemove(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize)
-                    longmoveDeviceValues(@rsltAmbientPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longmoveDeviceValues(@rsltAmbientPerSpad32, pData, msize / 4)
 
             spadCountIdx:
                 if enaNbSpadsEnabled
                     '(void)memcpy(p_results->nb_spads_enabled, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    ' W/O CONVERT: bytemove(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize)
-                    longmoveDeviceValues(@rsltNbrSpadsEnabled32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longmoveDeviceValues(@rsltNbrSpadsEnabled32, pData, msize / 4)
 
             nbTargetDetectIdx:
                 if enaNbTargetDetected
                     '(void)memcpy(p_results->nb_target_detected, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    bytemove(@rsltNbTgtDetected8, @BYTE[@tempBuffer][i + 4], msize)
+                    'debug("  -- Bmdv: ", uhex_byte_array(pData, 4))
+                    bytemove(@rsltNbTgtDetected8, pData, msize)
 
             signalRateIdx:
                 if enaSignalPerSpad
                     '(void)memcpy(p_results->signal_per_spad, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    ' W/O CONVERT: bytemove(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize)
-                    longmoveDeviceValues(@rsltSignalPerSpad32, @BYTE[@tempBuffer][i + 4], msize / 4)
+                    longmoveDeviceValues(@rsltSignalPerSpad32, pData, msize / 4)
 
             rangeSigmaMMIdx:
                 if enaRangeSigmaMM
                     '(void)memcpy(p_results->range_sigma_mm, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    ' W/O CONVERT: bytemove(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize)
-                    wordmoveDeviceValues(@rsltRangeSigmaMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
+                    wordmoveDeviceValues(@rsltRangeSigmaMM16, pData, msize / 2)
 
             distanceIdx:
                 if enaDistanceMM
                     '(void)memcpy(p_results->distance_mm, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    ' W/O CONVERT: bytemove(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize)
-                    wordmoveDeviceValues(@rsltDistanceMM16, @BYTE[@tempBuffer][i + 4], msize / 2)
+                    wordmoveDeviceValues(@rsltDistanceMM16, pData, msize / 2)
 
             reflectancePrcntIdx:
                 if enaReflectancePrcnt
                     '(void)memcpy(p_results->reflectance, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    bytemove(@rsltReflectance8, @BYTE[@tempBuffer][i + 4], msize)
+                    'debug("  -- Bmdv: ", uhex_byte_array(pData, 4))
+                    bytemove(@rsltReflectance8, pData, msize)
 
             targetStatusIdx:
                 if enaTargetStatus
                     '(void)memcpy(p_results->target_status, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    bytemove(@rsltTargetStatus8, @BYTE[@tempBuffer][i + 4], msize)
+                    'debug("  -- Bmdv: ", uhex_byte_array(pData, 4))
+                    bytemove(@rsltTargetStatus8, pData, msize)
 
             motionDetectIdx:
                 if enaMotionIndicator
                     '(void)memcpy(&p_results->motion_indicator, &(p_dev->temp_buffer[i + (uint32_t)4]), msize)
-                    bytemove(@rsltMotionIndicatorStruct, @BYTE[@tempBuffer][i + 4], msize)
+                    'debug("  -- Bmdv: ", uhex_byte_array(pData, 4))
+                    bytemove(@rsltMotionIndicatorStruct, pData, msize)
                     ' this left a bunch of values in device order let's do fixup
                     {
                         rsltMotionIndicatorStruct
@@ -991,13 +1011,21 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize,
                     ' just rewrite the byte orders in place...
                     global_indicator_1 := longDeviceValue(global_indicator_1)
                     global_indicator_2 := longDeviceValue(global_indicator_2)
-                    repeat i from 0 to VL53L5CX_NBR_MOTION_ENTRIES - 1
-                        LONG[@rsltMotionValue32][i] := longDeviceValue(LONG[@rsltMotionValue32][i])
-
+                    repeat entryIdx from 0 to VL53L5CX_NBR_MOTION_ENTRIES - 1
+                        LONG[@rsltMotionValue32][entryIdx] := longDeviceValue(LONG[@rsltMotionValue32][entryIdx])
+            VL53L5CX_METADATA_IDX:
+            VL53L5CX_COMMONDATA_IDX:
+                ' we ignore these header-only indexes
             other:
-                ' nothing to do here
+                ' Huh? We don't know what this one is! Report it!
+                debug("  -- ERROR Unkown ", uhex_word(bhIdx))
 
-        i += msize
+        bfrByteIdx += msize + 4
+
+        if msize == 0
+           debugStopWithMessage(@"ERROR! bad msize", msize)
+
+    while bfrByteIdx < dataReadSize - 1
 
     ' #ifndef VL53L5CX_USE_RAW_FORMAT
     ' if NOT raw
@@ -1006,45 +1034,45 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize,
 
         if enaAmbientPerSpad
             'for (i = 0 i < (uint32_t)VL53L5CX_RESOLUTION_8X8 i++)
-            repeat i from 0 to VL53L5CX_RESOLUTION_8X8 - 1
+            repeat entryIdx from 0 to VL53L5CX_RESOLUTION_8X8 - 1
                 ' p_results->ambient_per_spad[i] /= (uint32_t)2048
-                LONG[@rsltAmbientPerSpad32][i] /= 2048
+                LONG[@rsltAmbientPerSpad32][entryIdx] /= 2048
 
         'for (i = 0 i < (uint32_t)(VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TARGET_PER_ZONE) i++)
-        repeat i from 0 to (VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1
+        repeat entryIdx from 0 to (VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1
             if enaDistanceMM
                 ' p_results->distance_mm[i] /= 4
-                WORD[@rsltDistanceMM16][i] /= 4
+                WORD[@rsltDistanceMM16][entryIdx] /= 4
                 'if (p_results->distance_mm[i] < 0)
-                if WORD[@rsltDistanceMM16][i] < 4
+                if WORD[@rsltDistanceMM16][entryIdx] < 4
                     ' p_results->distance_mm[i] = 0
-                    WORD[@rsltDistanceMM16][i] := 0
+                    WORD[@rsltDistanceMM16][entryIdx] := 0
 
                 if enaRangeSigmaMM
                     'p_results->range_sigma_mm[i] /= (uint16_t)128
-                    WORD[@rsltRangeSigmaMM16][i] /= 128
+                    WORD[@rsltRangeSigmaMM16][entryIdx] /= 128
 
                 if enaSignalPerSpad
                     ' p_results->signal_per_spad[i] /= (uint32_t)2048
-                    LONG[@rsltSignalPerSpad32][i] /= 2048
+                    LONG[@rsltSignalPerSpad32][entryIdx] /= 2048
 
         ' Set target status to 255 if no target is detected for this zone
         if enaNbTargetDetected
             'for (i = 0 i < (uint32_t)VL53L5CX_RESOLUTION_8X8 i++)
-            repeat i from 0 to VL53L5CX_RESOLUTION_8X8 - 1
+            repeat entryIdx from 0 to VL53L5CX_RESOLUTION_8X8 - 1
                 ' if (p_results->nb_target_detected[i] == (uint8_t)0)
-                if BYTE[@rsltNbTgtDetected8][i] == 0
+                if BYTE[@rsltNbTgtDetected8][entryIdx] == 0
                     ' for (j = 0 j < (uint32_t)VL53L5CX_NB_TARGET_PER_ZONE j++)
-                    repeat j from 0 to VL53L5CX_NB_TGT_PER_ZONE - 1
+                    repeat entrySubIdx from 0 to VL53L5CX_NB_TGT_PER_ZONE - 1
                         if enaTargetStatus
                             'p_results->target_status[((uint32_t)VL53L5CX_NB_TARGET_PER_ZONE * (uint32_t)i) + j] = (uint8_t)255
-                            BYTE[@rsltTargetStatus8][(VL53L5CX_NB_TGT_PER_ZONE * i) + j] := 255
+                            BYTE[@rsltTargetStatus8][(VL53L5CX_NB_TGT_PER_ZONE * entryIdx) + entrySubIdx] := 255
 
         if enaMotionIndicator
             ' for (i = 0 i < (uint32_t)32 i++)
-            repeat i from 0 to VL53L5CX_NBR_MOTION_ENTRIES - 1
+            repeat entryIdx from 0 to VL53L5CX_NBR_MOTION_ENTRIES - 1
                 'p_results->motion_indicator.motion[i] /= (uint32_t)65535
-                LONG[@rsltMotionValue32][i] /= 65535
+                LONG[@rsltMotionValue32][entryIdx] /= 65535
 
     'debug("VL53: rsltAmbientPerSpad32[] ", uhex_long_array(@rsltAmbientPerSpad32, 64))
     'debug("VL53: rsltNbTgtDetected8[] ", uhex_byte_array(@rsltNbTgtDetected8, 64))
@@ -1057,11 +1085,18 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize,
     'waitms(2)
     'debug("VL53: rsltReflectance8[] ", uhex_byte_array(@rsltReflectance8, 64))
     'debug("VL53: rsltTargetStatus8[] ", uhex_byte_array(@rsltTargetStatus8, 64))
-    reportOnData()
+    'reportOnData()
 
     if not bStatusNotOK ' is status ok?! (yeah, double negative!)
         bDataReturned := TRUE
 
+PRI debugStopWithMessage(pmesg, valInError)
+    debug("   ---> STOP: ", zstr_(pmesg), ": (", uhex_word_(valInError), ")")
+    waitms(10)
+    repeat ' hold on ERROR
+
+{
+'   UNCOMMENT this block to turn on diagnostic reporting of data arrival
 PRI reportOnData()
     debug(" ")
     reportEmptyLongArray(@rsltAmbientPerSpad32, VL53L5CX_RESOLUTION_8X8, @"AmbientPerSpad")
@@ -1078,8 +1113,8 @@ PRI reportEmptyByteArray(pBytes, nCount, pArrayId) | result, idx, pStatus
     result := BYTE[pBytes][0]
     if result == 0
         repeat idx from 1 to nCount - 1
-            result += BYTE[pBytes][idx]
-            if result > 0
+            result |= BYTE[pBytes][idx]
+            if result <> 0
                 quit
     reportFindings(result, pArrayId)
 
@@ -1087,8 +1122,8 @@ PRI reportEmptyWordArray(pWords, nCount, pArrayId) | result, idx
     result := WORD[pWords][0]
     if result == 0
         repeat idx from 1 to nCount - 1
-            result += WORD[pWords][idx]
-            if result > 0
+            result |= WORD[pWords][idx]
+            if result <> 0
                 quit
     reportFindings(result, pArrayId)
 
@@ -1096,13 +1131,14 @@ PRI reportEmptyLongArray(pLongs, nCount, pArrayId) | result, idx
     result := LONG[pLongs][0]
     if result == 0
         repeat idx from 1 to nCount - 1
-            result += LONG[pLongs][idx]
-            if result > 0
+            result |= LONG[pLongs][idx]
+            if result <> 0
                 quit
     reportFindings(result, pArrayId)
+'}
 
 PRI reportFindings(result, pArrayId) | pStatus
-    pStatus := (result > 0) ? @"has Data" : @"{is empty}"
+    pStatus := (result <> 0) ? @"has Data" : @"{is empty}"
     debug("VL53: ", zstr_(pArrayId), " ", zstr_(pStatus))
 
 PUB sampleDistanceMM(index) : nValue16 | validIndex
@@ -1339,13 +1375,13 @@ PRI initDriver()
         motionDetectIdx         := VL53L5CX_MOTN_DETEC_IDX
 
     if enaAmbientPerSpad
-        ambSize	:= 260
+        ambSize	:= 256 + 4
 
     if enaNbSpadsEnabled
-        spadSize := 260
+        spadSize := 256 + 4
 
     if enaNbTargetDetected
-        ntarSize := 68
+        ntarSize := 64 + 4
 
     if enaSignalPerSpad
         spsSize := ((256 * VL53L5CX_NB_TGT_PER_ZONE) + 4)
@@ -1363,7 +1399,7 @@ PRI initDriver()
         staSize := ((64  *VL53L5CX_NB_TGT_PER_ZONE) + 4)
 
     if enaMotionIndicator
-        motSize := 144
+        motSize := 140  + 4
 
     ' maxResultsSize indicates the maximum size used by output through I2C.
     '   (1440 w/VL53L5CX_NB_TGT_PER_ZONE = 1, +640 for ea. incre of VL53L5CX_NB_TGT_PER_ZONE)
@@ -1900,8 +1936,9 @@ CON { Device Literals for register load }
 
     ' 16-bit values
     VL53L5CX_T1_METADATA_IDX			    = $54B4
-    VL53L5CX_T1_SPAD_COUNT_IDX			    = $55D0
+    VL53L5CX_T1_COMMONDATA_IDX			    = $54C0
     VL53L5CX_T1_AMBIENT_RATE_IDX		    = $54D0
+    VL53L5CX_T1_SPAD_COUNT_IDX			    = $55D0
     VL53L5CX_T1_NB_TGT_DTEKT_IDX	        = $CF7C
     VL53L5CX_T1_SIGNAL_RATE_IDX		        = $CFBC
     VL53L5CX_T1_RNG_SIGMA_MM_IDX		    = $D2BC
@@ -1916,8 +1953,8 @@ CON { Device Literals for register load }
     VL53L5CX_METADATA_BH			        = $54B400C0
     VL53L5CX_COMMONDATA_BH			        = $54C00040
     VL53L5CX_AMBIENT_RATE_BH		        = $54D00104
-    VL53L5CX_NB_TGT_DTEKT_BH		        = $57D00401
     VL53L5CX_SPAD_COUNT_BH			        = $55D00404
+    VL53L5CX_NB_TGT_DTEKT_BH		        = $57D00401
     VL53L5CX_SIGNAL_RATE_BH			        = $58900404
     VL53L5CX_RNG_SIGMA_MM_BH		        = $64900402
     VL53L5CX_DISTANCE_BH			        = $66900402
@@ -1927,8 +1964,9 @@ CON { Device Literals for register load }
 
     ' 16-bit values
     VL53L5CX_METADATA_IDX			        = $54B4
-    VL53L5CX_SPAD_COUNT_IDX			        = $55D0
+    VL53L5CX_COMMONDATA_IDX			        = $54C0
     VL53L5CX_AMBIENT_RATE_IDX		        = $54D0
+    VL53L5CX_SPAD_COUNT_IDX			        = $55D0
     VL53L5CX_NB_TGT_DTEKT_IDX		        = $57D0
     VL53L5CX_SIGNAL_RATE_IDX		        = $5890
     VL53L5CX_RNG_SIGMA_MM_IDX		        = $6490
@@ -1937,7 +1975,132 @@ CON { Device Literals for register load }
     VL53L5CX_TGT_STATUS_IDX		            = $6B90
     VL53L5CX_MOTN_DETEC_IDX		            = $CC50
 
+{
+    if enaAmbientPerSpad
+        ambSize	:= 260
+    if enaNbSpadsEnabled
+        spadSize := 260
+    if enaNbTargetDetected
+        ntarSize := 68
+    if enaSignalPerSpad
+        spsSize := ((256 * VL53L5CX_NB_TGT_PER_ZONE) + 4)
+    if enaRangeSigmaMM
+        sigrSize := ((128 * VL53L5CX_NB_TGT_PER_ZONE) + 4)
+    if enaDistanceMM
+        distSize := ((128 * VL53L5CX_NB_TGT_PER_ZONE) + 4)
+    if enaReflectancePrcnt
+        rflestSize := ((64 *VL53L5CX_NB_TGT_PER_ZONE) + 4)
+    if enaTargetStatus
+        staSize := ((64  *VL53L5CX_NB_TGT_PER_ZONE) + 4)
 
+    if enaMotionIndicator
+        motSize := 144
+
+    NOTES: decodeing our BH values by entry
+
+    (this is number of targets == 1 case)
+
+    VL53L5CX_T1_START_BH			        = $0000000D
+      Index = $0000
+      Size = 0
+      Type = 13
+    VL53L5CX_T1_METADATA_BH			        = $54B400C0 (12 = 12 bytes)
+      Index = $54B4
+      Size = 12
+      Type = 0
+    VL53L5CX_T1_COMMONDATA_BH			    = $54C00040 (4 = 4 bytes) [$54D0-$54C0]=16 bytes
+      Index = $54C0
+      Size = 4
+      Type = 0
+    VL53L5CX_T1_AMBIENT_RATE_BH		        = $54D00104 (4 * 16 = 64 bytes: 256/4=64 longs) [$55D0-$54D0]=256 bytes
+      Index = $54D0
+      Size = 16
+      Type = 4
+    VL53L5CX_T1_SPAD_COUNT_BH			    = $55D00404 (4 * 64 = 256 bytes: 256/4=64 longs) [$CF7C-$55D0]=512 bytes (2x 256?)
+      Index = $55D0
+      Size = 64
+      Type = 4
+    VL53L5CX_T1_NB_TGT_DTEKT_BH	            = $CF7C0401 (64 = 64 bytes: 64=64 bytes)
+      Index = $CF7C
+      Size = 64
+      Type = 1
+    VL53L5CX_T1_SIGNAL_RATE_BH			    = $CFBC0404 (4 * 64 = 256 bytes: 256/4=64 longs)
+      Index = $CFBC
+      Size = 64
+      Type = 4
+    VL53L5CX_T1_RNG_SIGMA_MM_BH		        = $D2BC0402 (2 * 64 = 128 bytes: 128/2=64 words)
+      Index = $D2BC
+      Size = 64
+      Type = 2
+    VL53L5CX_T1_DISTANCE_BH			        = $D33C0402 (2 * 64 = 128 bytes: 128/2=64 words)
+      Index = $D33C
+      Size = 64
+      Type = 2
+    VL53L5CX_T1_RFLCTNC_BH			        = $D43C0401 (64 = 64 bytes: 64=64 bytes)
+      Index = $D43C
+      Size = 64
+      Type = 1
+    VL53L5CX_T1_TGT_STATUS_BH		        = $D47C0401 (64 = 64 bytes: 64=64 bytes)
+      Index = $D47C
+      Size = 64
+      Type = 1
+    VL53L5CX_T1_MOTN_DTEKT_BH		        = $CC5008C0 (140 = 140 bytes: 140=140 bytes)
+      Index = $CC50
+      Size = 140
+      Type = 0
+
+    (this is number of targets == 2 thru 4 case)
+
+    VL53L5CX_START_BH			            = $0000000D
+      Index = $0000
+      Size = 0
+      Type = 13
+    VL53L5CX_METADATA_BH			        = $54B400C0 (12 = 12 bytes) [$54C0-$54B4]=12 bytes
+      Index = $54B4
+      Size = 12
+      Type = 0
+    VL53L5CX_COMMONDATA_BH			        = $54C00040 (4 = 4 bytes) [$54D0-$54C0]=16 bytes
+      Index = $54C0
+      Size = 4
+      Type = 0
+    VL53L5CX_AMBIENT_RATE_BH		        = $54D00104 (4 * 64 = 256 bytes: 256/4=64 longs) [$55D0-$54D0]=256 bytes
+      Index = $54D0
+      Size = 16
+      Type = 4
+    VL53L5CX_SPAD_COUNT_BH			        = $55D00404 (4 * 64 = 256 bytes: 256/4=64 longs) [$57D0-$55D0]=512 bytes (2x 256?)
+      Index = $55D0
+      Size = 64
+      Type = 4
+    VL53L5CX_NB_TGT_DTEKT_BH		        = $57D00401 (64 = 64 bytes: 64=64 bytes) [$5890-$57D0]=192 bytes (3x 64?)
+      Index = $57D0
+      Size = 64
+      Type = 1
+    VL53L5CX_SIGNAL_RATE_BH			        = $58900404 (4 * 64 = 256 bytes: 256/4=64 longs) [$6490-$5890]=3072 bytes (12x 256?)
+      Index = $5890
+      Size = 64
+      Type = 4
+    VL53L5CX_RNG_SIGMA_MM_BH		        = $64900402 (2 * 64 = 128 bytes: 128/2=64 words) [$6690-$6490]=512 bytes (4x 128?)
+      Index = $6490
+      Size = 64
+      Type = 2
+    VL53L5CX_DISTANCE_BH			        = $66900402 (2 * 64 = 128 bytes: 128/2=64 words) [$6A90-$6690]=1024 bytes (8x 128?)
+      Index = $6690
+      Size = 64
+      Type = 2
+    VL53L5CX_RFLCTNC_BH			            = $6A900401 (64 = 64 bytes: 64=64 bytes) [$6B90-$6A90]=256 bytes (4x 64?)
+      Index = $6A90
+      Size = 64
+      Type = 1
+    VL53L5CX_TGT_STATUS_BH		            = $6B900401 (64 = 64 bytes: 64=64 bytes) [$CC50-$6B90]=24,832 bytes (no meaning)
+      Index = $6B90
+      Size = 64
+      Type = 1
+    VL53L5CX_MOTN_DTEKT_BH		            = $CC5008C0 (140 = 140 bytes: 140=140 bytes) [??? we don't know end]
+      Index = $CC50
+      Size = 140
+      Type = 0
+
+}
 CON { Byte-order conversions }
 
 ' ---------------------------------------------------------
@@ -1977,18 +2140,26 @@ PRI longReplaceDeviceValues(pByteArray, nbrBytes) | tmp, i
         ' memcpy(&(LONG[pByteArray][i]), &tmp, 4)
         LONG[@BYTE[pByteArray][i]] := longDeviceValue(LONG[@BYTE[pByteArray][i]]) ' yep, this is reversable...
 
-PRI wordmoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, WORD logicalWord, WORD dvcWord
+PRI wordmoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, dumpCount, WORD logicalWord, WORD dvcWord
 ' copy device WORDS to destination but converting their byte order enroute
+    'dumpCount := MIN(4, wordCount)
+    'debug("  -- Wmdv: ", uhex_word_array(pDvcWords, dumpCount))
     repeat wdIdx from 0 to wordCount - 1
-        dvcWord := WORD[pDestWords][wdIdx]
+        dvcWord := WORD[pDvcWords][wdIdx]
         logicalWord.byte[0] := dvcWord.byte[1]
         logicalWord.byte[1] := dvcWord.byte[0]
         WORD[pDestWords][wdIdx] := logicalWord
 
-PRI longmoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx
+PRI longmoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx, dumpCount
 ' copy device LONGS to destination but converting their byte order enroute
+    'dumpCount := MIN(4, longCount)
+    'debug("  -- Lmdv: ", uhex_long_array(pDvcLongs, dumpCount))
     repeat longIdx from 0 to longCount - 1
-        WORD[pDestLongs][longIdx] := longDeviceValue(WORD[pDvcLongs][longIdx])
+        LONG[pDestLongs][longIdx] := longDeviceValue(LONG[pDvcLongs][longIdx])
+
+
+PRI MIN(a, b) : minVal
+    minVal := (a < b) ? a : b
 
 ' ---------------------------------------------------------------
     ' NOTE: union interp:
