@@ -1046,8 +1046,21 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize,
                 'p_results->motion_indicator.motion[i] /= (uint32_t)65535
                 LONG[@rsltMotionValue32][i] /= 65535
 
+    debug("VL53: rsltAmbientPerSpad32[] ", uhex_long_array(@rsltAmbientPerSpad32, 64))
+    debug("VL53: rsltNbrSpadsEnabled32[] ", uhex_long_array(@rsltNbrSpadsEnabled32, 64))
+    waitms(2)
+    debug("VL53: rsltNbTgtDetected8[] ", uhex_byte_array(@rsltNbTgtDetected8, 64))
+    debug("VL53: rsltSignalPerSpad32[] ", uhex_long_array(@rsltSignalPerSpad32, 64))
+    waitms(2)
+    debug("VL53: rsltRangeSigmaMM16[] ", uhex_word_array(@rsltRangeSigmaMM16, 64))
+    debug("VL53: rsltDistanceMM16[] ", uhex_word_array(@rsltDistanceMM16, 64))
+    waitms(2)
+    debug("VL53: rsltReflectance8[] ", uhex_byte_array(@rsltReflectance8, 64))
+    debug("VL53: rsltTargetStatus8[] ", uhex_byte_array(@rsltTargetStatus8, 64))
+
     if not bStatusNotOK ' is status ok?! (yeah, double negative!)
         bDataReturned := TRUE
+
 
 PUB sampleDistanceMM(index) : nValue16 | validIndex
 '' Return DistanceMM[{index}] value
@@ -1057,6 +1070,25 @@ PUB sampleDistanceMM(index) : nValue16 | validIndex
     if validIndex <> index
         debug("sampleDistanceMM(", udec(index), ": index out of range 0-", udec((VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1))
     nValue16 := rsltDistanceMM16[validIndex]
+
+PUB sampleReflectance(index) : nValue8 | validIndex
+'' Return Reflectance[{index}] value
+'' NOTE {index} will be coerced into legal value
+''  but if so debug message will be emitted
+    validIndex := 0 #> index <# (VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1
+    if validIndex <> index
+        debug("sampleReflectance(", udec(index), ": index out of range 0-", udec((VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1))
+    nValue8 := rsltReflectance8[validIndex]
+
+PUB sampleTargetStatus(index) : nValue8 | validIndex
+'' Return TargetStatus[{index}] value
+'' NOTE {index} will be coerced into legal value
+''  but if so debug message will be emitted
+    validIndex := 0 #> index <# (VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1
+    if validIndex <> index
+        debug("sampleTargetStatus(", udec(index), ": index out of range 0-", udec((VL53L5CX_RESOLUTION_8X8 * VL53L5CX_NB_TGT_PER_ZONE) - 1))
+    nValue8 := rsltTargetStatus8[validIndex]
+
 
 CON '  --- Tunable DRIVER CONSTANTs ---
 

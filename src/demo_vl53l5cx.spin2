@@ -241,7 +241,7 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
     repeat  ' halt here for now
 
 
-PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
+PRI taskMonitorRanging(imageWidth) | x, y, BYTE samples[8]
 ' TASK: TOF Listener
 
     repeat  ' forever
@@ -255,17 +255,28 @@ PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
         ' The ST library returns the data transposed from zone mapping shown in datasheet
         ' Pretty-print data with increasing y, decreasing x to reflect reality
         'for (int y = 0 ; y <= imageWidth * (imageWidth - 1) ; y += imageWidth)
+        debug(" -- Reflectance")
         repeat y from 0 to imageWidth - 1
             'for (int x = imageWidth - 1 ; x >= 0 ; x--)
             repeat x from imageWidth -1 to 0 step -1
-                samples[x] := tofSensor.sampleDistanceMM((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_word_array_(@samples, 8))
+                samples[x] := tofSensor.sampleReflectance((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
+        debug(" ")
+
+        debug(" -- TargetStatus")
+        repeat y from 0 to imageWidth - 1
+            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
+            repeat x from imageWidth -1 to 0 step -1
+                samples[x] := tofSensor.sampleTargetStatus((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
         debug(" ")
 
         debug("* DTA-TSK: Done with data")
         bDataReady := FALSE
 
 
+PUB sampleReflectance(index) : nValue8 | validIndex
+PUB sampleTargetStatus(index) : nValue8 | validIndex
 
 CON { ------ PRIVATE (Utility) Methods ------ }
 
