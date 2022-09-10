@@ -164,12 +164,6 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         repeat   ' hold here for eval
 '}
 
-        ' start ranging result display loop
-        bDataReady := FALSE     ' have task wait until data is present
-        cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
-
-        waitms(500) ' let task announce itself in debug, then proceed
-
         configuredValue := tofSensor.VL53L5CX_RESOLUTION_4X4
         tofSensor.setResolution(configuredValue)
 
@@ -178,8 +172,14 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         debug("* imageResolution = ", udec_(imageResolution), udec(eDvcStatus))
         debug("* imageWidth = ", udec_(imageWidth))
 
-        tofSensor.enableIODebug(TRUE) ' set to TRUE if want to see write/read buffers during test
+        waitms(500) ' finish displaying before starting cog
 
+        ' start ranging result display loop
+        bDataReady := FALSE     ' have task wait until data is present
+        cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
+        waitms(500) ' let task announce itself in debug, then proceed
+
+        tofSensor.enableIODebug(TRUE) ' set to TRUE if want to see write/read buffers during test
 {
         ' --------------------------------------------------------------------------
         '  UNCOMMENT this block to see initial/default driver values
@@ -229,6 +229,9 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
                     ' now wait for consumer...
                     readCt--    ' count this one
                     repeat until bDataReady == FALSE ' hold until BG task displays it
+
+                debug("* Main TEST HOLD")
+                repeat
             else
                 waitms(2000) ' Small delay between polling (2 sec)
 
@@ -243,7 +246,8 @@ PRI taskMonitorRanging(imageWidth) | x, y, WORD samples[8]
 
     repeat  ' forever
 
-        debug("* DTA-TSK: Waiting for data...")
+        debug("* DTA-TSK: Waiting for data...width/height = ", udec_(imageWidth))
+        debug(" ")
         ' wait for data to be ready
         repeat until bDataReady == TRUE ' hold until BG task displays it
         debug("* DTA-TSK: Have data, processing")
