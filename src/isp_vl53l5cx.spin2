@@ -644,7 +644,7 @@ PUB getTargetOrder() : eDvcStatus, eTargetOrder | bStatusNotOK
 
 CON ' --- PUBLIC Device TOF Sensing Control ---
 
-PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logicalValue32b, bStatusNotOK, idx, pktLen, address16
+PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logicalValue32b, bStatusNotOK, idx, pktLen, address16, readSize
 '' Starts a ranging session.
 ''   NOTE: When the sensor is streaming, user cannot change settings 'on-the-fly'.
 ''  Returns VL53L5CX_STATUS_OK if the start ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
@@ -763,6 +763,18 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     'status |= _vl53l5cx_poll_for_answer(p_dev, 4, 1, VL53L5CX_UI_CMD_STATUS, 0xff, 0x03)
     bStatusNotOK |= pollForAnswer(4, 1, VL53L5CX_UI_CMD_STATUS, $FF, $03)
 
+    '  Read ui range data content and compare if data size is the correct one
+    ' TEMPORARY code something seen in v1.4 handler
+	' status |= vl53l5cx_dci_read_data(p_dev, (uint8_t*)p_dev->temp_buffer, 0x5440, 12);
+    bStatusNotOK := dciReadData(@dciWorkBuffer, $5440, 12)
+	'(void)memcpy(&tmp, &(p_dev->temp_buffer[0x8]), sizeof(tmp))
+    readSize := LONG[@BYTE[@dciWorkBuffer][8]]
+	if readSize <> dataReadSize
+    ' FIXME: these read back the same but compare badly!!! WHY!!!
+        ' DEBUG says they are the same value!!!!
+        debug("VL53: readback check fail ", udec(readSize), "/", uhex_(readSize), " vs. ", udec(dataReadSize), "/", uhex_(dataReadSize))
+		'eDvcStatus |= VL53L5CX_STATUS_ERROR
+
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
     else
@@ -839,7 +851,7 @@ PUB didInterrupt() : bPinState | rawPin
 
 CON ' --- PUBLIC Routines accessing TOF Ranging Data ---
 
-PUB isDataReadyToUnload() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dataReady
+PUB isDataReadyToUnload() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dataReady, WORD go2StatusBytes
 '' Check sensor by polling i2c. Return T/F (where T means data is ready) when {eDvcStatus} is VL53L5CX_STATUS_OK
 '' Alternatively returns {eDvcStatus}:
 ''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
@@ -857,6 +869,10 @@ PUB isDataReadyToUnload() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dat
     '     $FE        $04        $CA        $81
     ' b1111_1110 b0000_0100 b1100_1010 b1000_0001    ' sigh
 
+    '     $00        $05        $C5        $81
+    ' b0000_0000 b0000_0101 b1100_0101 b1000_0001    ' sigh
+    ' bxxxx_xxxx b0000_0101 bxxxx_x1x1 bxxx1_xxxx    ' expected
+
     if BYTE[@tempBffr][0] <> streamcount and BYTE[@tempBffr][0] <> 255 and BYTE[@tempBffr][1] == 5 and ((BYTE[@tempBffr][2] & $05 ==  $05) and (BYTE[@tempBffr][3] & $10 ==  $10))
         '*p_isReady = (uint8_t)1
         dataReady := 1
@@ -873,6 +889,9 @@ PUB isDataReadyToUnload() : eDvcStatus, bDataReady | bStatusNotOK, tempBffr, dat
 
     debug("VL53: data check bRdy=", uhex_byte_(dataReady), ", eDvcSta=", udec_byte_(eDvcStatus), ", strmCt=", uhex_byte_(streamcount), uhex_byte_array(@tempBffr, 4))
 
+    IF bDataReady
+        debug("VL53: LOCK - good data!")
+        REPEAT
 
 PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, i, j, msize, bhType, bhIdx, bhSize
 '' Retrieve ranging data from the sensor. Return T/F (where T means data was retrieved) when {eDvcStatus} is VL53L5CX_STATUS_OK
@@ -1261,7 +1280,8 @@ PRI initDriver()
         motSize := 144
 
     ' maxResultsSize indicates the maximum size used by output through I2C.
-    '  Value 40 corresponds to headers + meta-data + common-data and 8 corresponds to the footer_ofst.
+    '   (1440 w/VL53L5CX_NB_TGT_PER_ZONE = 1, +640 for ea. incre of VL53L5CX_NB_TGT_PER_ZONE)
+    '  Value 40 corresponds to headers + meta-data + common-data and 8 corresponds to the footer.
     maxResultsSize := (40 + ambSize + spadSize + ntarSize + spsSize + sigrSize + distSize + rflestSize + staSize + motSize + 8)
 
     if maxResultsSize > VL53L5CX_TEMP_BUFFER_SIZE
@@ -1387,7 +1407,7 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
 
     ' (void)memcpy(p_dev->offset_data, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
     ' preserve master copy of Offset 8x8 buffer
-    BYTEMOVE(@ofsTempBuffer, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+    BYTEMOVE(@ofsMasterBuffer, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
     ' 	status |= _vl53l5cx_send_offset_data(p_dev, VL53L5CX_RESOLUTION_4X4);
     bStatusNotOK |= sendOffsetData(VL53L5CX_RESOLUTION_4X4)
 
@@ -1395,7 +1415,7 @@ PRI vl53l5cxInit() : eDvcStatus | pipe_ctrl, single_range, bStatusNotOK, bTempSt
 
     ' (void)memcpy(p_dev->xtalk_data, (uint8_t *)VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
     ' preserve master copy of Xtalk 8x8 buffer
-    BYTEMOVE(@xtalkTempBuffer, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
+    BYTEMOVE(@xtalkMasterBuffer, @VL53L5CX_DEFAULT_XTALK, VL53L5CX_XTALK_BUFFER_SIZE)
     ' NOTE: the following copies the default into place... -> xtalk_data buffer
     ' status |= _vl53l5cx_send_xtalk_data(p_dev, VL53L5CX_RESOLUTION_4X4);
     bStatusNotOK |= sendXtalkData(VL53L5CX_RESOLUTION_4X4)
@@ -1437,13 +1457,13 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
     debug("VL53: Send OFFSET Data")
 
     ' get copy of Offset-Buffer 8x8 image
-    BYTEMOVE(@tempBuffer, @ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
+    BYTEMOVE(@tempBuffer, @ofsMasterBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, p_dev->offset_data, VL53L5CX_OFFSET_BUFFER_SIZE)
 
     ' Data extrapolation is required for 4X4 offset
     if eResolution == VL53L5CX_RESOLUTION_4X4
         BYTEMOVE(@BYTE[@tempBuffer][$10], @dss4x4_ofst, 8)                        ' (void)memcpy(&(p_dev->temp_buffer[0x10]), dss4x4_ofst, sizeof(dss4x4_ofst))
         ' convert tempBuffer from device byte-order to propeller order (buffer is known to be an array of uint32_t or LONGs)
-        longReplaceDeviceValues(@ofsTempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
+        longReplaceDeviceValues(@tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
 
         ' extract signal grid
         LONGMOVE(@signalGrid32, @BYTE[@tempBuffer][$03c], SIGNAL_GRID_SIZE_LONGS)  ' (void)memcpy(signal_grid, &(p_dev->temp_buffer[0x3C]), sizeof(signal_grid))
@@ -1496,7 +1516,7 @@ PRI sendOffsetData(eResolution) : eDvcStatus | j, i, k, bStatusNotOK, idx4x4, id
     repeat k from 0 to (VL53L5CX_OFFSET_BUFFER_SIZE - 4) - 1                    ' for (k = 0 k < (VL53L5CX_OFFSET_BUFFER_SIZE - (uint16_t)4) k++)
         BYTE[@tempBuffer][k] := BYTE[@tempBuffer][k + 8]                        ' p_dev->temp_buffer[k] = p_dev->temp_buffer[k + 8]
 
-    BYTEMOVE(@BYTE[@tempBuffer][$1e0], @footer_ofst, 8)                         ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer_ofst, 8)
+    BYTEMOVE(@BYTE[@tempBuffer][$1e0], @footer_ofst, 8)                         ' (void)memcpy(&(p_dev->temp_buffer[0x1E0]), footer, 8)
 
     ' status |= WrMulti(&(p_dev->platform), 0x2e18, p_dev->temp_buffer, VL53L5CX_OFFSET_BUFFER_SIZE)
     bStatusNotOK := writeBytes($2e18, @tempBuffer, VL53L5CX_OFFSET_BUFFER_SIZE)
@@ -1516,7 +1536,7 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
     debug("VL53: Send XTALK Data")
 
     ' get copy of Xtalk-Buffer 8x8 image
-    BYTEMOVE(@tempBuffer, @xtalkTempBuffer, VL53L5CX_XTALK_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
+    BYTEMOVE(@tempBuffer, @xtalkMasterBuffer, VL53L5CX_XTALK_BUFFER_SIZE)             ' (void)memcpy(p_dev->temp_buffer, &(p_dev->xtalk_data[0]), VL53L5CX_XTALK_BUFFER_SIZE)
 
     ' Data extrapolation is required for 4X4 Xtalk
     if (eResolution == VL53L5CX_RESOLUTION_4X4)
@@ -1572,7 +1592,7 @@ PRI sendXtalkData(eResolution) : eDvcStatus | j, i, bStatusNotOK, cntBytesToCopy
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
 
-PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout, bStatusNotOK, bTimedOut, bFaulted, fwErrByte
+PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout, bStatusNotOK, bTimedOut, bFaulted, fwErrByte, bffrLong
 
     if bShowIODebug
         DEBUG("  pollForAnswer() ", udec_byte(size8), udec_byte(posn8), uhex_word(addr16), uhex_byte(mask8), uhex_byte(expected8))
@@ -1588,7 +1608,7 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout
 
     repeat
         'status |= RdMulti(&(p_dev->platform), addr16, p_dev->temp_buffer, size8)
-        bStatusNotOK |= readBytes(addr16, @tempBuffer, size8)
+        bStatusNotOK |= readBytes(addr16, @bffrLong, size8)
         ' NOPE, do below....      status |= WaitMs(&(p_dev->platform), 10)
 
         '  2s timeout
@@ -1597,20 +1617,20 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout
             eDvcStatus := VL53L5CX_MCU_ERROR
             ' FW error
             if size8 >= 3
-                fwErrByte := BYTE[@tempBuffer][2]          ' status |= p_dev->temp_buffer[2]
-                debug("  - TIMEOUT: ", uhex(eDvcStatus), uhex(fwErrByte), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", bufERRbyt=", uhex_byte_(BYTE[@tempBuffer][2]))
+                fwErrByte := BYTE[@bffrLong][2]          ' status |= p_dev->temp_buffer[2]
+                debug("  - TIMEOUT: ", uhex(eDvcStatus), uhex(fwErrByte), ", read=", uhex_byte_(BYTE[@bffrLong][posn8]), ", bufERRbyt=", uhex_byte_(BYTE[@bffrLong][2]))
             else
-                debug("  - TIMEOUT: ", uhex(eDvcStatus), "read=", uhex_byte_(BYTE[@tempBuffer][posn8]))
-            debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@tempBuffer, size8))
+                debug("  - TIMEOUT: ", uhex(eDvcStatus), "read=", uhex_byte_(BYTE[@bffrLong][posn8]))
+            debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@bffrLong, size8))
             quit
-        elseif ((size8 >= 3) and (BYTE[@tempBuffer][2] >= $7f))
+        elseif ((size8 >= 3) and (BYTE[@bffrLong][2] >= $7f))
             bFaulted := TRUE
             eDvcStatus := VL53L5CX_MCU_ERROR
-            debug("  - ABORT: ", uhex(eDvcStatus), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", bufERRbyt=", uhex_byte_(BYTE[@tempBuffer][2]))
-            debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@tempBuffer, size8))
+            debug("  - ABORT: ", uhex(eDvcStatus), ", read=", uhex_byte_(BYTE[@bffrLong][posn8]), ", bufERRbyt=", uhex_byte_(BYTE[@bffrLong][2]))
+            debug("  -- BYTES READ(", udec_(size8), ") ", uhex_byte_array(@bffrLong, size8))
             quit
 
-        if ((BYTE[@tempBuffer][posn8] & mask8) == expected8)
+        if ((BYTE[@bffrLong][posn8] & mask8) == expected8)
             quit
 
         timeout++
@@ -1622,9 +1642,9 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
     if eDvcStatus <> VL53L5CX_STATUS_OK and not bTimedOut
-        debug("  - ERROR: read fault  ", uhex_byte(eDvcStatus), uhex_byte(bStatusNotOK), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expected8), "]")
+        debug("  - ERROR: read fault  ", uhex_byte(eDvcStatus), uhex_byte(bStatusNotOK), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@bffrLong][posn8]), ", [", uhex_byte_(BYTE[@bffrLong][posn8] & mask8), " == ", uhex_byte_(expected8), "]")
     elseif not bTimedOut and not bFaulted and bShowIODebug
-        debug("  - FOUND it!  ", uhex_byte(eDvcStatus), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@tempBuffer][posn8]), ", [", uhex_byte_(BYTE[@tempBuffer][posn8] & mask8), " == ", uhex_byte_(expected8), "]")
+        debug("  - FOUND it!  ", uhex_byte(eDvcStatus), udec_byte(timeout), ", read=", uhex_byte_(BYTE[@bffrLong][posn8]), ", [", uhex_byte_(BYTE[@bffrLong][posn8] & mask8), " == ", uhex_byte_(expected8), "]")
 
     waitms(10) ' wait 10ms no matter the outcome...
 
@@ -1665,6 +1685,7 @@ CON { fixed driver values }
     VL53L5CX_DCI_DSS_CONFIG		            = $AD38
     VL53L5CX_DCI_TGT_ORDER	                = $AE64
     VL53L5CX_DCI_SHARPENER		            = $AED8
+
     VL53L5CX_DCI_MOTN_DETECTOR_CFG          = $BFAC
     VL53L5CX_DCI_SINGLE_RANGE	            = $CD5C
     VL53L5CX_DCI_OUTPUT_CONFIG	            = $CD60
@@ -1974,13 +1995,13 @@ VAR { Variables for dci/ranging & configurattion commands }
     ' Size of data read though I2C
     LONG	        dataReadSize
     ' Address of default configuration buffer
-    LONG	        pDefaultConfigurationBytes
+    'LONG	        pDefaultConfigurationBytes
     ' Address of default Xtalk buffer
-    LONG		    pDefaultXtalkBytes
+    'LONG		    pDefaultXtalkBytes
     ' Offset buffer
-    BYTE		    offset_data[VL53L5CX_OFFSET_BUFFER_SIZE]
+    BYTE    ofsMasterBuffer[VL53L5CX_OFFSET_BUFFER_SIZE]          ' 488 bytes was offset_data[]
     ' Xtalk buffer
-    BYTE		    xtalk_data[VL53L5CX_XTALK_BUFFER_SIZE]
+    BYTE    xtalkMasterBuffer[VL53L5CX_XTALK_BUFFER_SIZE]           ' 776 bytes was xtalk_data[]
     ' Temporary buffer used for internal driver processing
     'BYTE	        temp_buffer[VL53L5CX_TEMP_BUFFER_SIZE]
     BYTE            tempBuffer[VL53L5CX_TEMP_BUFFER_SIZE]
@@ -1988,10 +2009,6 @@ VAR { Variables for dci/ranging & configurattion commands }
 
     LONG    signalGrid32[SIGNAL_GRID_SIZE_LONGS]
     WORD    rangeGrid16[RANGE_GRID_SIZE_WORDS]
-
-    BYTE    xtalkTempBuffer[VL53L5CX_XTALK_BUFFER_SIZE]           ' 776 bytes
-    BYTE    ofsTempBuffer[VL53L5CX_OFFSET_BUFFER_SIZE]          ' 488 bytes
-
 
     BYTE    srtRngCmd[DCI_SRTRNG_CMD_LEN_IN_BYTES]
     BYTE    dciCmd[DCI_RD_CMD_LEN_IN_BYTES]
