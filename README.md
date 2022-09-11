@@ -71,6 +71,7 @@ On this Page:
 
 Additional pages:
 
+- [GOAL - TOF Sensor: w/180° Field of View](./DOCs/Designs/README.md) - how I make this wide field-of-view sensor?
 - [PCF8575 Driver Documentation](./PCF8575.md) - this is likely to be used to select between multiple TOF sensors
 
 
