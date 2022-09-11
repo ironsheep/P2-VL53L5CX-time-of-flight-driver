@@ -10,7 +10,10 @@ Initial design for DIY Robotic Sensor w/180° Field of View using 4x VL53L5CX TO
 In this Folder you'll find my intial schematics (r0.1) along with my Initial 3D-Printed Bracket Design for holding the 4 TOF sensors at the needed angles.
 
 - [Schematic](./Tof180SensorBoard/Tof180Sensor-R0.1.pdf) - my electrical wiring plan
-- [Mounting Bracket](Tof180SensorBracket) - Image of my 3D printed bracket for holding the sensors
+- [model - Mounting Bracket](./Tof180SensorBracket/Shapr3d-View.jpeg) - Screenshot of my 3D printed bracket for holding the sensors as I extruded it to export for 3D Printing
+- [Model File - Mounting Bracket](./Tof180SensorBracket/TOF-V2d.3mf) - 3D Model File (.3mf) ready for slicing then 3D printing
+
+*These are my initial files/plans. I will update them as things change*
 
 ---
 
