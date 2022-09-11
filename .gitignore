@@ -127,6 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# KiCad backup files
+DOCs/Designs/Tof180SensorBoard/Tof180Sensor-backups/
+*.bak
+
+# misc temp source stuff I create locally
 src/vl53l5cx_mm1_1_fw.spin2
 src/temp.spin2
 src/f1.spin2
