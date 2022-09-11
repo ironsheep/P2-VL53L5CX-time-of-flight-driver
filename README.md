@@ -38,6 +38,9 @@ This sensor is available in a number of forms from a number of sources:
 Latest Changes:
 
 ```
+10 Sep 2022
+- Full data arriving from TOF sensor correctly!
+- Working on HDMI display of 4 sensors at once
 6 Sep 2022
 - All public methods converted, now in midst of turning on ranging...
 - Code starting to take shape
