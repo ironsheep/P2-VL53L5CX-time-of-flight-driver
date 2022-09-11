@@ -69,7 +69,7 @@ Licensed under the MIT License.
 
 Follow these links for more information:
 
-### [Copyright](copyright) | [License](LICENSE)
+### [Copyright](/copyright) | [License](/LICENSE)
 
 [maintenance-shield]: https://img.shields.io/badge/maintainer-stephen%40ironsheep%2ebiz-blue.svg?style=for-the-badge
 
