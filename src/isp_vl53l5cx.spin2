@@ -913,6 +913,14 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, bfrByteIdx, 
     ' status |= RdMulti(&(p_dev->platform), 0x0, p_dev->temp_buffer, p_dev->data_read_size)
     bStatusNotOK := readBytes($0000, @tempBuffer, dataReadSize)
 
+    ' NOTE: tempBuffer now contains data block with interspersed Control Headers (long of "union Block_header *" format)
+    ' the first couple blocks are meta data and common data which are ignored
+    ' the ending block has BHSize of ZERO, BHIndex of ZERO with BHType of $0E
+
+    ' msize for each entry is calculated to be the length of data within each entry so we just interpret header, move data,
+    '  interpret next header, move its data, etc. until we find the ending block header.
+
+    ' stream count is an incrementing value tracked by the sensor, each read this should increment (wrapping at end of range)
     'p_dev->streamcount = p_dev->temp_buffer[0]
     streamcount := BYTE[@tempBuffer][0]
 
@@ -2142,7 +2150,7 @@ PRI longReplaceDeviceValues(pByteArray, nbrBytes) | tmp, i
 
 PRI wordmoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, dumpCount, WORD logicalWord, WORD dvcWord
 ' copy device WORDS to destination but converting their byte order enroute
-    'dumpCount := MIN(4, wordCount)
+    'dumpCount := min(4, wordCount)
     'debug("  -- Wmdv: ", uhex_word_array(pDvcWords, dumpCount))
     repeat wdIdx from 0 to wordCount - 1
         dvcWord := WORD[pDvcWords][wdIdx]
@@ -2152,14 +2160,11 @@ PRI wordmoveDeviceValues(pDestWords, pDvcWords, wordCount) | wdIdx, dumpCount, W
 
 PRI longmoveDeviceValues(pDestLongs, pDvcLongs, longCount) | longIdx, dumpCount
 ' copy device LONGS to destination but converting their byte order enroute
-    'dumpCount := MIN(4, longCount)
+    'dumpCount := min(4, longCount)
     'debug("  -- Lmdv: ", uhex_long_array(pDvcLongs, dumpCount))
     repeat longIdx from 0 to longCount - 1
         LONG[pDestLongs][longIdx] := longDeviceValue(LONG[pDvcLongs][longIdx])
 
-
-PRI MIN(a, b) : minVal
-    minVal := (a < b) ? a : b
 
 ' ---------------------------------------------------------------
     ' NOTE: union interp:
@@ -2194,6 +2199,10 @@ PRI replaceBHSizeInLong(logicalValue32, bhSize) : newLogicalValue32
     newLogicalValue32 |= ((bhSize & $0000_0fff) << 4)      ' place new size value in field
     'debug("  -- replaceBHSizeInLong() was: ", uhex_long_(logicalValue32))
     'debug("  --                        is: ", uhex_long_(newLogicalValue32))
+
+PRI min(a, b) : minVal
+    minVal := (a < b) ? a : b
+
 
 CON { CONSTANTS for dci/ranging subCommands }
 

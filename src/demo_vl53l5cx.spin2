@@ -240,8 +240,17 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
 
     repeat  ' halt here for now
 
+CON
 
-PRI taskMonitorRanging(imageWidth) | x, y, BYTE samples[8]
+   MAX_SAMPLES_PER_ROW = 8
+
+VAR
+
+    LONG samples32[MAX_SAMPLES_PER_ROW]
+    WORD samples16[MAX_SAMPLES_PER_ROW]
+    BYTE samples8[MAX_SAMPLES_PER_ROW]
+
+PRI taskMonitorRanging(imageWidth) | x, y, LONG samples[8]
 ' TASK: TOF Listener
 
     repeat  ' forever
@@ -259,26 +268,36 @@ PRI taskMonitorRanging(imageWidth) | x, y, BYTE samples[8]
         repeat y from 0 to imageWidth - 1
             'for (int x = imageWidth - 1 ; x >= 0 ; x--)
             repeat x from imageWidth -1 to 0 step -1
-                samples[x] := tofSensor.sampleReflectance((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
+                samples8[x] := tofSensor.sampleReflectance((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_byte_array_(@samples8, imageWidth))
         debug(" ")
-
+        '{
         debug(" -- TargetStatus")
         repeat y from 0 to imageWidth - 1
             'for (int x = imageWidth - 1 ; x >= 0 ; x--)
             repeat x from imageWidth -1 to 0 step -1
-                samples[x] := tofSensor.sampleTargetStatus((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
+                samples8[x] := tofSensor.sampleTargetStatus((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_byte_array_(@samples8, imageWidth))
         debug(" ")
-'{
+        '}
+        '{
+        debug(" -- Target Distance")
+        repeat y from 0 to imageWidth - 1
+            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
+            repeat x from imageWidth -1 to 0 step -1
+                samples16[x] := tofSensor.sampleDistanceMM((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_word_array_(@samples16, imageWidth))
+        debug(" ")
+        '}
+        '{
         debug(" -- NbTgtDetected")
         repeat y from 0 to imageWidth - 1
             'for (int x = imageWidth - 1 ; x >= 0 ; x--)
             repeat x from imageWidth -1 to 0 step -1
-                samples[x] := tofSensor.sampleNbTgtDetected((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_byte_array_(@samples, imageWidth))
+                samples8[x] := tofSensor.sampleNbTgtDetected((y * imageWidth) + x)
+            debug("- ", udec(y), ": ", udec_byte_array_(@samples8, imageWidth))
         debug(" ")
-'}
+        '}
         debug("* DTA-TSK: Done with data")
         bDataReady := FALSE
 
@@ -392,7 +411,6 @@ PRI taskReadSensor() | startTicks, startMS, statusOK
     statusOK := locateSensor()    ' start our i2c MPU 9DOF sensor
     if statusOK
         debug("calibration()")
-        calibrateSensor()
         debug("calibration() Complete")
 
         debug("demo()")
@@ -430,21 +448,6 @@ DAT { cal data }
 accelBiasXYZ long    0[3]
 gyroBiasXYZ long    0[3]
 
-PRI calibrateSensor()
-    ' put sensor thru calibration paces
-    'tofSensor.enableDebug(TRUE)
-
-    'tofSensor.calibrateMPU9150(@gyroBiasXYZ, @accelBiasXYZ)
-    {
-    debug("- Calibration Offsets  - - - - - - - - - - - - - - - -")
-    debug(`demoLog ' Accel X : `(LONG [@accelBiasXYZ][0])   |   Gyro X : `(LONG [@gyroBiasXYZ][0])' 10)
-    debug(`demoLog ' Accel Y : `(LONG [@accelBiasXYZ][1])   |   Gyro Y : `(LONG [@gyroBiasXYZ][1])' 10)
-    debug(`demoLog ' Accel Z : `(LONG [@accelBiasXYZ][2])   |   Gyro Z : `(LONG [@gyroBiasXYZ][2])' 10)
-    debug("- - - - - - - - - - - - - - - - - - - - - -- - - - - -")
-    '}
-
-    'tofSensor.enableDebug(FALSE)
-
 PRI resetSensor(ok)
     if(ok)
         'tofSensor.configDefault()
@@ -453,101 +456,11 @@ PRI resetSensor(ok)
 
 CON { -------------- demo-0 -------------- }
 
-PUB demo0(loopCt) | accel_x, accel_y, accel_z, temperatureInC, decimalInC, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, temperatureInF, decimalInF
-    '' Actual MPU 9DOF demo - read regs and display values
-{
-    if loopCt <= 0
-        loopCt := 1
-
-    ' loop 1 - N times
-    repeat loopCt
-        accel_x, accel_y, accel_z := tofSensor.readAccel()
-        waitms(10)
-        gyro_x, gyro_y, gyro_z := tofSensor.readGyro()
-        waitms(10)
-        mag_x, mag_y, mag_z := tofSensor.readMag()
-        waitms(10)
-        temperatureInC, decimalInC := tofSensor.readTemperature()
-        temperatureInF, decimalInF := tofSensor.comvert2TempInF(temperatureInC, decimalInC)
-
-
-        tmpIntX, tmpDecimalX, pSignX := unscale(accel_x, 1000)
-        tmpIntY, tmpDecimalY, pSignY := unscale(accel_x, 1000)
-        tmpIntZ, tmpDecimalZ, pSignZ := unscale(accel_x, 1000)
-
-        debug(`demoLog ' Accel X : `(tmpIntX).`(tmpDecimalX) | Gyro X : `(gyro_x) | Mag X : `(mag_x)' 10)
-        debug(`demoLog ' Accel Y : `(tmpIntY).`(tmpDecimalY) | Gyro Y : `(gyro_y) | Mag Y : `(mag_y)' 10)
-        debug(`demoLog ' Accel Z : `(tmpIntZ).`(tmpDecimalZ) | Gyro Z : `(gyro_z) | Mag Z : `(mag_z)' 10)
-        debug("\r\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
-        debug(`demoLog 'Temperature: `(temperatureInC).`(decimalInC) C' 10)
-        debug(`demoLog 'Temperature: `(temperatureInF).`(decimalInF) F')
-        debug("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\r\n")
-
-        waitms(3000)
-'}
-
-
-CON { -------------- demo-1 -------------- }
-
-DAT { demo1 data: sample names }
-
-{
-
-sample0 byte    "top",0
-sample1 byte    "toLeft",0
-sample2 byte    "toRight",0
-sample3 byte    "toFront",0
-sample4 byte    "toBack",0
-sample5 byte    "bottom",0
-
-' float conversion crap
-tmpIntX     long    0
-tmpDecimalX long    0
-pSignX      long    0
-tmpIntY     long    0
-tmpDecimalY long    0
-pSignY      long    0
-tmpIntZ     long    0
-tmpDecimalZ long    0
-pSignZ      long    0
-
-sampleNames LONG    @sample0, @sample1, @sample2, @sample3, @sample4, @sample5
-'}
-
-PUB demo1(loopCt) | pName, loopIndex, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z
-{
-    if loopCt <= 0
-        loopCt := 1
-
-    ' loop 1 - N times
-    pName := LONG [@sampleNames][0]
-    debug(`demoLog '-->  Set Up:  `(0+1)')
-    waitms(3000)
-    repeat loopIndex from 0 to loopCt - 1
-        pName := LONG [@sampleNames][loopIndex]
-        accel_x, accel_y, accel_z := tofSensor.readAccelRaw()
-        gyro_x, gyro_y, gyro_z := tofSensor.readGyroRaw()
-        mag_x, mag_y, mag_z := tofSensor.readMagRaw()
-        tmpIntX, tmpDecimalX, pSignX := unscale(accel_x, 1000)
-        tmpIntY, tmpDecimalY, pSignY := unscale(accel_y, 1000)
-        tmpIntZ, tmpDecimalZ, pSignZ := unscale(accel_z, 1000)
-
-        debug(`demoLog 10 '- `(loopIndex+1)  - - - - - - - - - - -')
-        debug(`demoLog ' Accel X : `(tmpIntX).`(tmpDecimalX)   |   Gyro X : `(gyro_x)   |   Mag X : `(mag_x)')
-        debug(`demoLog ' Accel Y : `(tmpIntY).`(tmpDecimalY)    |   Gyro Y : `(gyro_y)   |   Mag Y : `(mag_y)')
-        debug(`demoLog ' Accel Z : `(tmpIntZ).`(tmpDecimalZ)    |   Gyro Z : `(gyro_z)   |   Mag Z : `(mag_z)')
-        debug(`demoLog '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -' 10)
-
-        pName := LONG [@sampleNames][loopIndex+1]
-        debug(`demoLog 10 '-->  Set Up:  `(loopIndex+2)' 10)
-        waitms(3000)
-'}
-
 CON { --- HDMI Debug Support --- }
 
 CON { Constants for HDMI Debug }
 
-    DBG_GROUPS_CT = 4
+    DBG_GROUPS_CT = 3
     DBG_MAX_VARS_IN_GROUP = 7
 
 VAR { * Data Structure for HDMI Debug * }
@@ -592,16 +505,6 @@ nextAddr2
 nextAddr3
     dataLen3     LONG    @nextAddr3 - @nameTitle3
 
-' orientation data & misc data
-    nameTitle4  BYTE    "Orientation+",0
-    name40      BYTE    "roll",0
-    name41      BYTE    "pitch",0
-    name42      BYTE    "yaw",0
-    name43      BYTE    " -",0
-    name44      BYTE    " -",0
-    name45      BYTE    "sens-ms",0
-nextAddr4
-    dataLen4     LONG    @nextAddr4 - @nameTitle4
 
 PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
 ' do internal one-time setup of driver debug data
@@ -666,27 +569,9 @@ PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
     LONG[@pValsAr][nValsGrpOffset + 4] := @gyroY
     LONG[@pValsAr][nValsGrpOffset + 5] := @gyroZ
 
-    nGrpOffset := 3
-    nVarsInGroup := 6
-    LONG[@pTitlesAr][nGrpOffset] := @nameTitle4
-    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
-     ' populate the empty name/value ptr tables
-    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
-    LONG[@pNamesAr][nValsGrpOffset + 0] := @name40
-    LONG[@pNamesAr][nValsGrpOffset + 1] := @name41
-    LONG[@pNamesAr][nValsGrpOffset + 2] := @name42
-    LONG[@pNamesAr][nValsGrpOffset + 3] := @name43
-    LONG[@pNamesAr][nValsGrpOffset + 4] := @name44
-    LONG[@pNamesAr][nValsGrpOffset + 5] := @name45
-    LONG[@pValsAr][nValsGrpOffset + 0] := @roll
-    LONG[@pValsAr][nValsGrpOffset + 1] := @pitch
-    LONG[@pValsAr][nValsGrpOffset + 2] := @yaw
-    LONG[@pValsAr][nValsGrpOffset + 3] := @unused0
-    LONG[@pValsAr][nValsGrpOffset + 4] := @unused1
-    LONG[@pValsAr][nValsGrpOffset + 5] := @senseTimeMS
 
     ' tell our table size to reader
-    nGrpOffset := 4
+    nGrpOffset := 3
     LONG[@pTitlesAr][nGrpOffset] := DBG_MAX_VARS_IN_GROUP
 
 PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars | tmpAbsPtr

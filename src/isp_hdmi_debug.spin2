@@ -97,8 +97,11 @@ DAT { TASK: DEBUG w/Vars }
     lnsPerScrn      long    0
     ' driver vars
     textRow         long    0
-    col             long    0
     logRow          long    0
+    col             long    0
+    row             long    0
+    colorFG         long    0
+    colorBG         long    0
 
     colorText       byte    "color-"
     nbrAscii        byte    "0"
@@ -121,6 +124,21 @@ DAT { TASK: DEBUG w/Vars }
     origfont        long    0
     dsplyOffset1    long    0
     dsplyOffset2    long    0
+    label           byte    0[7]
+
+    colorGrayScale  word
+'    colors          word    $0f00, $0f01, $0f04, $0f06   ' DK0-3
+    colors          word    $0800, $0001, $0004, $0006   ' DK0-3
+'                    word    $0f05, $0f02, $0f03, $0f07  ' LT0-3 white text
+                    word    $0005, $0002, $0003, $0007  ' LT0-3 black text
+    noColor         word    0
+
+CON
+
+#0, SCLCLR_DK0, SCLCLR_DK1, SCLCLR_DK2, SCLCLR_DK3, SCLCLR_LT0, SCLCLR_LT1, SCLCLR_LT2, SCLCLR_LT3
+
+PRI showTextWithDarknessAtRc(pLabel, eDarkness)
+
 
 PUB registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars) | nDsplyOffset, pTitleStr
 '' Register a new display-list to be shown
@@ -272,14 +290,46 @@ PRI taskShowDebug(pDriverCmd, pDriverArg, pDsplyList)
             placeBoxAtRC(rowForGroupRow(1), colForGroupIdx(3), 18, 10)
             placeBoxAtRC(rowForGroupRow(1), colForGroupIdx(4), 18, 10)
 
-            placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(0), 18, 10)
-            placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(1), 18, 10)
-            placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(2), 18, 10)
-            placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(3), 18, 10)
-            placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(4), 18, 10)
+            'placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(0), 18, 10)
+            'placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(1), 18, 10)
+            'placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(2), 18, 10)
+            'placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(3), 18, 10)
+            'placeBoxAtRC(rowForGroupRow(2), colForGroupIdx(4), 18, 10)
 
-            ' NOTE: let's use GroupRow(3) for scolling log
+             ' NOTE: let's use GroupRow(3) for scolling log
+            '-or-
+            '{ remove for color testing
+            placeMarkedBoxAtRC(rowForGroupRow(2), colForSensorIdx(0), 25, 12, TC_CYAN)
+            placeMarkedBoxAtRC(rowForGroupRow(2), colForSensorIdx(1), 25, 12, TC_RED)
+            placeMarkedBoxAtRC(rowForGroupRow(2), colForSensorIdx(2), 25, 12, TC_GREEN)
+            placeMarkedBoxAtRC(rowForGroupRow(2), colForSensorIdx(3), 25, 12, TC_BLUE)
+            '}
 
+{
+            ' color testing
+            ' show panel all possible FG and BG combinations
+            repeat colorFG from 0 to 15
+                repeat colorBG from 0 to 15
+                    row := colorFG + 11 ' 12?
+                    col := colorBG * 6
+                    BYTE[@label][0] := $30 + colorFG / 10
+                    BYTE[@label][1] := $30 + colorFG +// 10
+                    BYTE[@label][2] := $5c '/'
+                    BYTE[@label][3] := $30 + colorBG / 10
+                    BYTE[@label][4] := $30 + colorBG +// 10
+                    setTextPos(row, col)
+                    vid.setTextColours(colorFG, colorBG)
+                    vid.printStr(@label)
+'}
+            ' place our legend
+            placeTextWithDarknessAtRc(28,  0, @"  DK0  ", SCLCLR_DK0)
+            placeTextWithDarknessAtRc(28, 8, @"  DK1  ", SCLCLR_DK1)
+            placeTextWithDarknessAtRc(28, 16, @"  DK2  ", SCLCLR_DK2)
+            placeTextWithDarknessAtRc(28, 24, @"  DK3  ", SCLCLR_DK3)
+            placeTextWithDarknessAtRc(28, 40, @"  LT0  ", SCLCLR_LT0)
+            placeTextWithDarknessAtRc(28, 48, @"  LT1  ", SCLCLR_LT1)
+            placeTextWithDarknessAtRc(28, 56, @"  LT2  ", SCLCLR_LT2)
+            placeTextWithDarknessAtRc(28, 64, @"  LT3  ", SCLCLR_LT3)
             ' ------------------------
             ' do static updates
             ' ------------------------
@@ -466,11 +516,21 @@ PRI verifyLabel(pStr) : pOkLabel | nLen
     nLen := strsize(pStr)
     pOkLabel := (nLen > 20) ? @badLabel : pStr
 
+PRI placeTextWithDarknessAtRc(nRow, nCol, pText, eDarkness)
+    setTextPos(nRow, nCol)
+    vid.setTextColours(fgbgForDarkness(eDarkness))
+    vid.printStr(pText)
+
 PRI placeTextAtRC(nRow, nCol, pText)
 ' place text-colored string on screen
     setTextPos(nRow, nCol)
     vid.setTextColours(COLR_TEXT, COLR_BG)
     vid.printStr(pText)
+
+PRI fgbgForDarkness(eDarkness) : clrFG, clrBG | clrSet
+    clrSet := WORD[@colorGrayScale][eDarkness]
+    clrFG := (clrSet & $FF00) >> 8
+    clrBG := (clrSet & $00FF)
 
 PRI placeBoxAtRC(nRow, nCol, nWidth, nHeight) | bxRow ,bxCol, nChr
 ' place text-colored string on screen
@@ -500,6 +560,48 @@ PRI placeBoxAtRC(nRow, nCol, nWidth, nHeight) | bxRow ,bxCol, nChr
             if nChr <> 0
                 setTextPos(bxRow, bxCol)
                 vid.txraw(nChr)
+
+PRI placeMarkedBoxAtRC(nRow, nCol, nWidth, nHeight, bgColor) | bxRow ,bxCol, nChr, bUseBGColor
+' place text-colored box on screen w/ top and bottom rows colored
+' box has no right edge
+    vid.setTextColours(COLR_BOX, COLR_BG)
+    bUseBGColor := FALSE
+    repeat bxCol from nCol to nCol+nWidth-1
+        repeat bxRow from nRow to nRow+nHeight-1
+            nChr := 0
+            if bxRow == nRow and bxCol == nCol
+                ' place tl corner
+                nChr := LDC_CRNR_TL
+            elseif bxRow == nRow and bxCol == nCol+nWidth-1
+                ' place tr corner
+                'nChr := LDC_CRNR_TR
+            elseif bxRow == nRow+nHeight-1 and bxCol == nCol
+                ' place bl corner
+                nChr := LDC_CRNR_BL
+            elseif bxRow == nRow+nHeight-1 and bxCol == nCol+nWidth-1
+                ' place br corner
+                'nChr := LDC_CRNR_BR
+            elseif bxRow == nRow or bxRow == nRow+nHeight-1
+                ' place horiz edge
+                    bUseBGColor := TRUE
+                if bxRow == nRow+nHeight-1
+                    ' use color background on bottom edge only
+                    nChr := LDC_MID_HZ
+                else
+                    nChr := LDC_MID_HZ
+            elseif bxCol == nCol or bxCol == nCol+nWidth-1
+                ' place vert edge (no right edge)
+                if not bxCol == nCol+nWidth-1
+                    nChr := LDC_MID_VT
+
+            if nChr <> 0
+                setTextPos(bxRow, bxCol)
+                if bUseBGColor
+                    vid.setTextColours(COLR_BOX, bgColor)
+                vid.txraw(nChr)
+                if bUseBGColor
+                    vid.setTextColours(COLR_BOX, COLR_BG)
+                    bUseBGColor := FALSE
 
 PRI placeLabelAtRC(nRow, nCol, pLabel)
 ' place label-colored string at R,C on screen
@@ -583,13 +685,19 @@ PRI rowForGroupRow(nGroupRow) : nBoxRow
     nBoxRow := ((nGroupRow - 1) * 10) + 1
 
 PRI colForGroupIdx(nGroupIdx) : nColumn
-' column for group is every 19 chars and three per group-row
+' column for group is every 19 chars and five per group-row
     ' groups are displayed:
     '   0   1   2   3   4
     '   5   6   7   8   9
     nColumn := ((nGroupIdx +// 5) * 19) + 1
     'nColumn := ((nGroupIdx +// 3) * 19) + 1
 
+PRI colForSensorIdx(nSensorIdx) : nColumn
+' column for group is every 24 chars and four per group-row
+    ' groups are displayed:
+    '   0   1   2   3
+    '   4   5   6   7
+    nColumn := ((nSensorIdx +// 4) * 24) + 1
 
 CON { license }
 {{
