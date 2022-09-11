@@ -137,9 +137,6 @@ CON
 
 #0, SCLCLR_DK0, SCLCLR_DK1, SCLCLR_DK2, SCLCLR_DK3, SCLCLR_LT0, SCLCLR_LT1, SCLCLR_LT2, SCLCLR_LT3
 
-PRI showTextWithDarknessAtRc(pLabel, eDarkness)
-
-
 PUB registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars) | nDsplyOffset, pTitleStr
 '' Register a new display-list to be shown
     'if showHDMIDebug

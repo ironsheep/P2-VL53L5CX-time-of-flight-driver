@@ -91,6 +91,9 @@ CON { device/driver constants }
 
     PCF8575_I2C_ADDR_0      = $20
 
+PUB null()
+'' This is not a top-level object
+
 PUB enableDebug(bEnable)
     '' Turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object)
     bShowDebug := bEnable

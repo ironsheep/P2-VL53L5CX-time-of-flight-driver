@@ -134,6 +134,9 @@ CON { driver Settings }
 
 CON ' --- Driver Setup ---
 
+PUB null()
+'' This is not a top-level object
+
 PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | eDvcStatus, bIsAlive
 '' Start the device running
     bShowDebug := FALSE     ' no, not til requested
