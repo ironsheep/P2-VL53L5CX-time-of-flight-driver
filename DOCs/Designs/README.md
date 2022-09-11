@@ -18,7 +18,7 @@ If this works (*when I've figured out how to make it work?*) I can envision a sm
 THis makes B being made which would mount on the printed bracket as well simplifying the overall wiring.
 
 <p align="center">
-  <img src="./Tof180SensorBoard/Tof180Sensor-R0.1.png" width="600"><br>
+  <img src="./Tof180SensorBoard/Tof180Sensor-R0.1.png" width="800"><br>
   <B>My wiring plan for 4x TOF Sensors with</br>a PCF8575 i2c 16-port I/O Expander Provinding control.</B>
 </p>
 
@@ -32,7 +32,7 @@ To get our 180° field of view, we place each of the sensors in their own 45° s
 This is my initial plan for the bracket holding these sensors in this arrangement:
 
 <p align="center">
-  <img src="./Tof180SensorBracket/Shapr3d-View.jpeg" width="600"><br>
+  <img src="./Tof180SensorBracket/Shapr3d-View.jpeg" width="800"><br>
   <B>The bracket for holding 4x Satel boards vertically, </br>at each 45° position within the 180° field of view.</B>
 </p>
 
