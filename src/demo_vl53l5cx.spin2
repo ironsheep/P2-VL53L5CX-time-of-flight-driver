@@ -465,11 +465,6 @@ PRI taskReadSensor() | startTicks, startMS, statusOK
     debug("Done")
 '}
 
-DAT { cal data }
-
-accelBiasXYZ long    0[3]
-gyroBiasXYZ long    0[3]
-
 PRI resetSensor(ok)
     if(ok)
         'tofSensor.configDefault()

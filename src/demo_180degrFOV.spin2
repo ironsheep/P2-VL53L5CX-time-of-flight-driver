@@ -73,36 +73,19 @@ VAR
     long    percent8
     long    targetOrder
 
-DAT { run-time condition vars }
-
-    bUseHDMI        long    TRUE        ' set to TRUE to enable HDMI use/output
-    showHDMIDebug   long    FALSE
-
-    senseStack      long    0[64]
-
-    senseCog        long    0
-
-    screenTitle     byte    "-- TOF Sensor object Debug --", 0
-
-    bDataReady      long    FALSE
-
-    configuredValue long    0
-    readValue       long    0
-
 CON { -------------- MAIN -------------- }
 
-PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt
-    '' Main entry point of MPU 9DOF demo
-    'debug(`term demoLog pos 700 455 size 70 14 textsize 12 color cyan)
+PUB main()
+    '' Main entry point of 180° Field of View demo
 
-    if bUseHDMI
-        tvDebug.start(PIN_HDMI_BASE, @screenTitle)
+    ' configure the 180° sensor pins and HDMI display BASE-PIN
+    tofSensor.setHDMIBasePin(PIN_HDMI_BASE)
+    tofSensor.setExpanderPins(PIN_PCF8575_SDA0, PIN_PCF8575_SCL0, PIN_PCF8575_INT)
+    tofSensor.setTofPins(1, PIN_VL75L5CX_SDA1, PIN_VL75L5CX_SCL1)
+    tofSensor.setTofPins(2, PIN_VL75L5CX_SDA2, PIN_VL75L5CX_SCL2)
 
-        nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars := getDebugData()
-        debug("* Received: ", udec(nGroups), uhex_long(pGroupTitles), uhex_long(pGroupNames), uhex_long(pGroupVarCts), uhex_long(pGroupVars))
-        tvDebug.registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars)
-    else
-        showHDMIDebug := FALSE  ' force this off is not using HDMI
+    ' now start the sensor sensing
+    tofSensor.start()
 
     bDvcFound := locateSensor()
 
@@ -355,92 +338,9 @@ PRI tearDown()
 
 CON { --- TASK: keep live mpu9dof data --- }
 
-VAR { captured sensor data }
-
-    long rawMagX
-    long rawMagY
-    long rawMagZ
-    long magX
-    long magY
-    long magZ
-
-    long rawAccelX
-    long rawAccelY
-    long rawAccelZ
-    long accelX
-    long accelY
-    long accelZ
-
-    long rawGyroX
-    long rawGyroY
-    long rawGyroZ
-    long gyroX
-    long gyroY
-    long gyroZ
-
-    long roll
-    long pitch
-    long yaw
-    long unused0
-    long unused1
-    long senseTimeMS
-
-    long ticks1ms
-    long ticks1us
-    long ticks125ms
 
 PRI taskReadSensor() | startTicks, startMS, statusOK
     ' start for this cog too
-{
-    debug("Quiesce...")
-
-    ticks1ms   := (CLKFREQ / 1_000)
-    ticks1us   := (CLKFREQ / 1_000_000)
-    ticks125ms := ticks1ms * 125 * 2
-
-    'tofSensor.enableDebug(TRUE)
-    tofSensor.init(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' set pins to output low... so we can set LA trigger
-
-    debug("* taskReadSensor()  started")
-    statusOK := locateSensor()    ' start our i2c MPU 9DOF sensor
-    if statusOK
-        debug("calibration()")
-        debug("calibration() Complete")
-
-        debug("demo()")
-        resetSensor(statusOK)
-
-        repeat
-            startTicks := getct()
-            startMS := getms()
-
-            rawAccelX, rawAccelY, rawAccelZ := tofSensor.readAccelRaw()
-            accelX, accelY, accelZ := tofSensor.readAccel()
-
-            rawGyroX, rawGyroY, rawGyroZ := tofSensor.readGyroRaw()
-            gyroX, gyroY, gyroZ := tofSensor.readGyro()
-
-            rawMagX, rawMagY, rawMagZ := tofSensor.readMagRaw()
-            magX, magY, magZ := tofSensor.readMag()
-
-            roll, pitch, yaw := tofSensor.getRollPitchYaw()
-
-            senseTimeMS := getms() - startMS
-
-            '   wait remainder of 125 mSec before next sample pass
-            waitms(33)
-            'waitct(startTicks + ticks125ms)    ' wait to create "sense" time-base
-    else
-        debug("no sensor, TASK aborted")
-
-    tearDown()  ' stop any cogs, if needed
-    debug("Done")
-'}
-
-DAT { cal data }
-
-accelBiasXYZ long    0[3]
-gyroBiasXYZ long    0[3]
 
 PRI resetSensor(ok)
     if(ok)
@@ -450,151 +350,7 @@ PRI resetSensor(ok)
 
 CON { -------------- demo-0 -------------- }
 
-CON { --- HDMI Debug Support --- }
 
-CON { Constants for HDMI Debug }
-
-    DBG_GROUPS_CT = 3
-    DBG_MAX_VARS_IN_GROUP = 7
-
-VAR { * Data Structure for HDMI Debug * }
-
-    LONG    pTitlesAr[DBG_GROUPS_CT + 1]    ' first value is max vars
-    LONG    pVarCtAr[DBG_GROUPS_CT]
-    LONG    pNamesAr[DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP]
-    LONG    pValsAr[DBG_GROUPS_CT*DBG_MAX_VARS_IN_GROUP]
-
-DAT { Literals for HDMI Debug }
-
-' acelerometer data
-    nameTitle1  BYTE    "Accel",0
-    name10      BYTE    "rawX",0
-    name11      BYTE    "rawY",0
-    name12      BYTE    "rawZ",0
-    name13      BYTE    "X",0
-    name14      BYTE    "Y",0
-    name15      BYTE    "Z",0
-nextAddr1
-    dataLen1     LONG    @nextAddr1 - @nameTitle1
-
-' magnetometer data
-    nameTitle2  BYTE    "Mag",0
-    name20      BYTE    "rawX",0
-    name21      BYTE    "rawY",0
-    name22      BYTE    "rawZ",0
-    name23      BYTE    "X",0
-    name24      BYTE    "Y",0
-    name25      BYTE    "Z",0
-nextAddr2
-    dataLen2     LONG    @nextAddr2 - @nameTitle2
-
-' gyroscope data
-    nameTitle3  BYTE    "Gyro",0
-    name30      BYTE    "rawX",0
-    name31      BYTE    "rawY",0
-    name32      BYTE    "rawZ",0
-    name33      BYTE    "X",0
-    name34      BYTE    "Y",0
-    name35      BYTE    "Z",0
-nextAddr3
-    dataLen3     LONG    @nextAddr3 - @nameTitle3
-
-
-PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
-' do internal one-time setup of driver debug data
-    nGrpOffset := 0
-    nVarsInGroup := 6
-    LONG[@pTitlesAr][nGrpOffset] := @nameTitle1
-    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
-    ' populate the empty name/value ptr tables
-    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP
-    LONG[@pNamesAr][nValsGrpOffset + 0] := @name10
-    LONG[@pNamesAr][nValsGrpOffset + 1] := @name11
-    LONG[@pNamesAr][nValsGrpOffset + 2] := @name12
-    LONG[@pNamesAr][nValsGrpOffset + 3] := @name13
-    LONG[@pNamesAr][nValsGrpOffset + 4] := @name14
-    LONG[@pNamesAr][nValsGrpOffset + 5] := @name15
-    LONG[@pValsAr][nValsGrpOffset + 0] := @rawAccelX
-    LONG[@pValsAr][nValsGrpOffset + 1] := @rawAccelY
-    LONG[@pValsAr][nValsGrpOffset + 2] := @rawAccelZ
-    LONG[@pValsAr][nValsGrpOffset + 3] := @accelX
-    LONG[@pValsAr][nValsGrpOffset + 4] := @accelY
-    LONG[@pValsAr][nValsGrpOffset + 5] := @accelZ
-
-    ' reset unused
-    unused0 := 0
-    unused1 := 0
-
-    nGrpOffset := 1
-    nVarsInGroup := 6
-    LONG[@pTitlesAr][nGrpOffset] := @nameTitle2
-    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
-     ' populate the empty name/value ptr tables
-    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
-    LONG[@pNamesAr][nValsGrpOffset + 0] := @name20
-    LONG[@pNamesAr][nValsGrpOffset + 1] := @name21
-    LONG[@pNamesAr][nValsGrpOffset + 2] := @name22
-    LONG[@pNamesAr][nValsGrpOffset + 3] := @name23
-    LONG[@pNamesAr][nValsGrpOffset + 4] := @name24
-    LONG[@pNamesAr][nValsGrpOffset + 5] := @name25
-    LONG[@pValsAr][nValsGrpOffset + 0] := @rawMagX
-    LONG[@pValsAr][nValsGrpOffset + 1] := @rawMagY
-    LONG[@pValsAr][nValsGrpOffset + 2] := @rawMagZ
-    LONG[@pValsAr][nValsGrpOffset + 3] := @magX
-    LONG[@pValsAr][nValsGrpOffset + 4] := @magY
-    LONG[@pValsAr][nValsGrpOffset + 5] := @magZ
-
-    nGrpOffset := 2
-    nVarsInGroup := 6
-    LONG[@pTitlesAr][nGrpOffset] := @nameTitle3
-    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
-     ' populate the empty name/value ptr tables
-    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
-    LONG[@pNamesAr][nValsGrpOffset + 0] := @name30
-    LONG[@pNamesAr][nValsGrpOffset + 1] := @name31
-    LONG[@pNamesAr][nValsGrpOffset + 2] := @name32
-    LONG[@pNamesAr][nValsGrpOffset + 3] := @name33
-    LONG[@pNamesAr][nValsGrpOffset + 4] := @name34
-    LONG[@pNamesAr][nValsGrpOffset + 5] := @name35
-    LONG[@pValsAr][nValsGrpOffset + 0] := @rawGyroX
-    LONG[@pValsAr][nValsGrpOffset + 1] := @rawGyroY
-    LONG[@pValsAr][nValsGrpOffset + 2] := @rawGyroZ
-    LONG[@pValsAr][nValsGrpOffset + 3] := @gyroX
-    LONG[@pValsAr][nValsGrpOffset + 4] := @gyroY
-    LONG[@pValsAr][nValsGrpOffset + 5] := @gyroZ
-
-
-    ' tell our table size to reader
-    nGrpOffset := 3
-    LONG[@pTitlesAr][nGrpOffset] := DBG_MAX_VARS_IN_GROUP
-
-PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars | tmpAbsPtr
-'' Return pointers to HDMI-debug data structures for this motor-object instance
-    loadDisplayList()
-    nGroups := DBG_GROUPS_CT
-    pGroupTitles := @pTitlesAr         ' pStr := long[pTitlesAr][grpIdx]
-    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars := long[pVarCtAr][grpIdx]
-    pGroupNames := @pNamesAr           ' pGrpNameAr := long[pNamesAr][grpIdx], pVarName := long[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
-    pGroupVars := @pValsAr             ' pGrpLongVar := long[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
-    {
-    if showHDMIDebug
-        debug("* -------------")
-        'debug("* 9DOF DAT values: ", uhex_long(@hall), uhex_long_array(@hall, 4))
-        'debug("* 9DOF VAR values: ", uhex_long(@tvRpm_x10), uhex_long_array(@tvRpm_x10, 4))
-        debug("* NAMEs SOURCE1: ", uhex_long(@nameTitle1), uhex_byte_array(@nameTitle1, dataLen1))
-        debug("* NAMEs SOURCE2: ", uhex_long(@nameTitle2), uhex_byte_array(@nameTitle2, dataLen2))
-        debug("* NAMEs SOURCE3: ", uhex_long(@nameTitle3), uhex_byte_array(@nameTitle3, dataLen3))
-        debug("* -------------")
-        debug("* 9DOF DL title: ", uhex_long(@pTitlesAr), uhex_long_array(@pTitlesAr, DBG_GROUPS_CT + 1))
-        debug("* 9DOF DL VarCt: ", uhex_long(@pVarCtAr), uhex_long_array(@pVarCtAr, DBG_GROUPS_CT))
-        debug("* 9DOF DL Names: ", uhex_long(@pNamesAr), uhex_long_array(@pNamesAr, DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP))
-        debug("* 9DOF DL Values: ", uhex_long(@pValsAr), uhex_long_array(@pValsAr, DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP))
-        debug("* -------------")
-        debug("* 9DOF PARM values: ", uhex_long(@nGroups), uhex_long_array(@nGroups, 5))
-        debug("* -------------")
-        debug("* 9DOF Sent: ", udec(nGroups), uhex_long(pGroupTitles), uhex_long(pGroupNames), uhex_long(pGroupVarCts), uhex_long(pGroupVars))
-        debug("* =============")
-    '}
 
 
 CON { license }

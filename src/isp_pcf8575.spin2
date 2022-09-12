@@ -64,9 +64,7 @@ CON { fixed io pins }
 
 OBJ { external objects used }
 
-    'i2c_bus     : "jm_i2c"                                  ' i2c coms
-    ' FIXME: need to certify the 400KHz clocks
-    i2c_bus     : "isp_vl53_i2c_dec"                        ' i2c coms
+    i2c_bus     : "jm_i2c"                                  ' i2c coms
 
 DAT { pre-initialized }
 
@@ -86,7 +84,7 @@ VAR { globals }
 CON { device/driver constants }
 
     PULL_UP_PCF8575_I2C     = i2c_bus.PU_15K
-    FREQ_KHZ_PCF8575_I2C    = 409                 ' 400 KHz
+    FREQ_KHZ_PCF8575_I2C    = 480                 ' 400 KHz @270_000_000 sysclk?!
 
     MODE_READ               = %0000_0001
     MODE_WRITE              = %0000_0000
@@ -103,16 +101,6 @@ PUB enableDebug(bEnable)
         debug("*PCF: DBG ON")
     else
         debug("*PCF: DBG off")
-
-PUB init(pinSCL, pinSDA, pinINT)
-    '' Initialize the output pins (quiet the device so we can trigger LA)
-    'debug(`term 8575log pos 500 30 size 50 14 textsize 12 color green)
-
-    bPinsSetUp := setupPins(pinSCL, pinSDA, pinINT)  ' configure pin numbers if not already
-    if bPinsSetUp
-        floatDvcPins()
-        ' have the driver force its own pins quiet
-        i2c_bus.quiesce(pin_scl, pin_sda, PULL_UP_PCF8575_I2C)
 
 PUB start(pinSCL, pinSDA, pinINT) : bDevicePresent
     '' Start the device running
