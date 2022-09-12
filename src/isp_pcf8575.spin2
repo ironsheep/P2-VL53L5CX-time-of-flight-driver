@@ -64,7 +64,9 @@ CON { fixed io pins }
 
 OBJ { external objects used }
 
-    i2c_bus     : "jm_i2c"                                  ' i2c coms
+    'i2c_bus     : "jm_i2c"                                  ' i2c coms
+    ' FIXME: need to certify the 400KHz clocks
+    i2c_bus     : "isp_vl53_i2c_dec"                        ' i2c coms
 
 DAT { pre-initialized }
 

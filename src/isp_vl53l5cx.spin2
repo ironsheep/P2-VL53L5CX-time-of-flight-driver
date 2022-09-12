@@ -49,7 +49,7 @@
 CON { Interface constants }
 
 ' devcie found (or not) responses
-#0, DVC_NOT_FOUND, DVC_ADDR0, DVC_ADDR1
+#0, DVC_NOT_FOUND, DVC_ADDR0  ' this continues: [1-10]
 
 ' method return values
 '  VL53L5CX_STATUS_OK indicates that VL53L5 sensor has no error.
@@ -100,8 +100,7 @@ con { Fixed io pins }
 
 OBJ { Objects this object uses }
 
-    'i2c_bus     : "isp_vli2c"                                  ' i2c coms
-    i2c_bus     : "jm_i2c_dec"                                 ' i2c coms
+    i2c_bus     : "isp_vl53_i2c_dec"                            ' better timing
 
 VAR { Instance Variables - Global }
 
@@ -130,7 +129,6 @@ CON { driver Settings }
     FREQ_IN_KHZ_VL53L5CX_I2C = 1000              ' use 1 MHZ (1000 KHz)
 
     VL53L5CX_I2C_ADDR_0      = $52
-    VL53L5CX_I2C_ADDR_1      = $54
 
 CON ' --- Driver Setup ---
 
@@ -224,10 +222,6 @@ PUB enableMyIOToo() | pScl, pSda, pnInt, pRst, pLpn, pPwren  ' whoa pInt collide
 CON ' --- VL53L5CX PUBLIC interface ---
 CON ' --- PUBLIC Device Control ---
 
-PUB deviceID() : eDevice
-'' Return indication (enum value) of if and which device we found on i2c bus
-    eDevice := dvcI2CAddr
-
 PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTempStatusNotOK
 '' Returns {bIsAlive} when {eDvcStatus} == VL53L5CX_STATUS_OK
 ''  {bIsAlive} contains T/F (where T means the device was found on the i2c bus)
@@ -267,6 +261,9 @@ PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
+
+    if eDvcStatus == VL53L5CX_STATUS_OK
+        idDevice()
 
 PUB getI2CAddress() : nDvcI2CAddr
 '' Return the current i2c device address (or DVC_NOT_FOUND if no device found on i2c bus)
@@ -1290,7 +1287,7 @@ PRI floatPins()
     pinf(pin_lpn)    ' de-assert
     pinf(pin_pwren)  ' de-assert
 
-PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
+PRI idDevice() : eDevice | bFoundAddr, possI2Caddr, dvcDiff
     ' Identify the address our device is at on the i2c bus
     floatPins()
     ' enable 5v to 3.3v power supply
@@ -1300,24 +1297,25 @@ PRI idDevice() : eDevice | bFoundAddr0, bFoundAddr1
     ' condition the chip drive
     pinh(pin_lpn)               ' assert LPn (enable device selection)
 
-    bFoundAddr0 := bFoundAddr1 := false
-    if(i2c_bus.present((VL53L5CX_I2C_ADDR_1 & $fe | I2C_MODE_WRITE)))
-        bFoundAddr1 := true
-    else
-        if(i2c_bus.present((VL53L5CX_I2C_ADDR_0 & $fe | I2C_MODE_WRITE)))
-            bFoundAddr0 := true
+    bFoundAddr := false
+    ' scan a range of 10 addresses ($52, $54, etc.)
+    possI2Caddr := VL53L5CX_I2C_ADDR_0
+    repeat 10
+        if(i2c_bus.present((possI2Caddr & $fe | I2C_MODE_WRITE)))
+            bFoundAddr := true
+            quit
+        possI2Caddr += 2
     i2c_bus.stop()
 
     dvcI2CAddr := DVC_NOT_FOUND
     eDevice := DVC_NOT_FOUND
-    if(!bFoundAddr0 and bFoundAddr1)
-        eDevice := DVC_ADDR1
-        dvcI2CAddr := VL53L5CX_I2C_ADDR_1
-    elseif(bFoundAddr0 and !bFoundAddr1)
-        eDevice := DVC_ADDR0
-        dvcI2CAddr := VL53L5CX_I2C_ADDR_0
 
-    if (bFoundAddr0 or bFoundAddr1)
+    dvcDiff := (possI2Caddr - VL53L5CX_I2C_ADDR_0) >> 1
+    if(bFoundAddr)
+        eDevice := DVC_ADDR0 + dvcDiff
+        dvcI2CAddr := possI2Caddr
+
+    if (bFoundAddr)
         if bShowDebug
             debug("VL53: idDevice() found Addr: ", uhex_byte(idDevice()))
     else

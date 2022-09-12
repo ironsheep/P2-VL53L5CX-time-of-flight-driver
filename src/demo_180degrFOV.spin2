@@ -1,72 +1,66 @@
 '' =================================================================================================
 ''
-''   File....... demo_vl53l5cx.spin2
-''   Purpose.... Utility to demonstrate interaction with our VL53L5CX time-of-flight sensor
+''   File....... demo_180degrFOV.spin2
+''   Purpose.... Demonstrate interaction with our 4x VL53L5CX time-of-flight sensors providing a 180° Field of View
 ''   Authors.... Stephen M Moraco
 ''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
 ''               -- see below for terms of use
 ''   E-mail..... stephen@ironsheep.biz
-''   Started.... Aug 2022
-''   Updated.... 5 Sep 2022
+''   Started.... Sep 2022
+''   Updated.... 11 Sep 2022
 ''
 '' =================================================================================================
 
 CON { timing }
 
-  CLK_FREQ = 270_000_000                                        ' system freq as a constant
-  _clkfreq = CLK_FREQ                                           ' set system clock
-  MS_001   = CLK_FREQ / 1_000                                   ' ticks in 1ms
-  US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
+    CLK_FREQ = 270_000_000                                        ' system freq as a constant
+    _clkfreq = CLK_FREQ                                           ' set system clock
+    MS_001   = CLK_FREQ / 1_000                                   ' ticks in 1ms
+    US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
 
-  BR_TERM  = 230_400                                            ' terminal baud rate
-
+    BR_TERM  = 230_400                                            ' terminal baud rate
 
 CON { fixed io pins }
 
-  RX1      = 63  { I }                                          ' programming / debug
-  TX1      = 62  { O }
+    RX1      = 63  { I }                                          ' programming / debug
+    TX1      = 62  { O }
 
-  SF_CS    = 61  { O }                                          ' serial flash
-  SF_SCK   = 60  { O }
-  SF_SDO   = 59  { O }
-  SF_SDI   = 58  { I }
+    SF_CS    = 61  { O }                                          ' serial flash
+    SF_SCK   = 60  { O }
+    SF_SDO   = 59  { O }
+    SF_SDI   = 58  { I }
 
-  SD_SCK   = 61  { O }                                          ' sd card
-  SD_CS    = 60  { O }
-  SD_SDI   = 59  { O }
-  SD_SDO   = 58  { I }
+    SD_SCK   = 61  { O }                                          ' sd card
+    SD_CS    = 60  { O }
+    SD_SDI   = 59  { O }
+    SD_SDO   = 58  { I }
 
-  SDA1     = 57  { IO }                                         ' i2c (optional)
-  SCL1     = 56  { IO }
+    SDA1     = 57  { IO }                                         ' i2c (optional)
+    SCL1     = 56  { IO }
 
 CON { app io pins }
 
     PIN_HDMI_BASE = 8
 
-    PIN_TOF_INT     = 16
-    PIN_TOF_RST     = 17
-    PIN_TOF_SDA     = 18
-    PIN_TOF_SCL     = 19
-    PIN_TOF_LPN     = 20
-    PIN_TOF_PWREN   = 21
+    PIN_PCF8575_SCL0    = 25
+    PIN_PCF8575_SDA0    = 26
+    PIN_PCF8575_INT     = 24
 
+    PIN_VL75L5CX_SCL1   = 19
+    PIN_VL75L5CX_SDA1   = 18
+
+    PIN_VL75L5CX_SCL2   = 17
+    PIN_VL75L5CX_SDA2   = 16
 
 CON { basic constants }
 
     #true, ON, OFF                                                ' digital control
     #0, NO, YES
 
-    TRIES = 1                                                     ' should not be needed!
-
-    #0, S_LIST, S_MATRIX                                          ' display styles
-
-    STYLE = S_MATRIX                                              ' selected style
-
 
 OBJ { our sensors }
 
-    tofSensor   : "isp_vl53l5cx"                      ' our device under test
-    tvDebug     : "isp_hdmi_debug"                          ' Our HDMI display
+    tofSensor   : "isp_180degrFOV_TOFsensor"                      ' our device under test
 
 VAR
     long    cog
@@ -111,16 +105,6 @@ PUB main() | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, image
         showHDMIDebug := FALSE  ' force this off is not using HDMI
 
     bDvcFound := locateSensor()
-
-    {
-        ' device re-address testing
-    moveSensorTo($5E)
-
-    bDvcFound := locateSensor()
-
-    repeat      ' hold here to check if worked
-
-    '}
 
     if bDvcFound
 
@@ -339,7 +323,6 @@ PRI locateSensor() : ok | bDevicePresent, addrFound
     ' find and configure our mpu9dof device
     debug("* Setup...")
     tofSensor.enableDebug(TRUE)
-    tofSensor.enableIODebug(TRUE)
     bDevicePresent := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
     if bDevicePresent
         addrFound := tofSensor.getI2CAddress()
@@ -349,17 +332,6 @@ PRI locateSensor() : ok | bDevicePresent, addrFound
         else
             debug("* ERROR: Found no devices")
             ok := false
-    tofSensor.enableIODebug(FALSE)
-
-PRI moveSensorTo(newDvcId) : ok | eDvcStatus, readAddr
-    tofSensor.enableIODebug(TRUE)
-    eDvcStatus := tofSensor.setI2CAddress(newDvcId)
-    readAddr := tofSensor.getI2CAddress()
-    if readAddr == newDvcId
-        debug("* Sensor moved to ", uhex_byte_(newDvcId))
-    else
-        debug("* Sensor STILL at ", uhex_byte_(readAddr), " vs. at ", uhex_byte_(newDvcId))
-    tofSensor.enableIODebug(FALSE)
 
 DAT { misc messages }
 

@@ -1,0 +1,269 @@
+'' =================================================================================================
+''
+''   File....... isp_180degrFOV_TOFsensor.spin2
+''   Purpose.... Object Providing interface to 4x VL53L5CX time-of-flight sensors acting as a single TOF sensor w/180° Field of View
+''   Authors.... Stephen M Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Sep 2022
+''   Updated.... 11 Sep 2022
+''
+'' =================================================================================================
+CON { PUBLIC Interface Constants }
+
+    DRVR_DIDNT_RESPOND = (-1)
+
+CON { timing }
+
+    CLK_FREQ = 270_000_000                                        ' system freq as a constant
+    _clkfreq = CLK_FREQ                                           ' set system clock
+    MS_001   = CLK_FREQ / 1_000                                   ' ticks in 1ms
+    US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
+
+    BR_TERM  = 230_400                                            ' terminal baud rate
+
+CON { fixed io pins }
+
+    RX1      = 63  { I }                                          ' programming / debug
+    TX1      = 62  { O }
+
+    SF_CS    = 61  { O }                                          ' serial flash
+    SF_SCK   = 60  { O }
+    SF_SDO   = 59  { O }
+    SF_SDI   = 58  { I }
+
+    SD_SCK   = 61  { O }                                          ' sd card
+    SD_CS    = 60  { O }
+    SD_SDI   = 59  { O }
+    SD_SDO   = 58  { I }
+
+    SDA1     = 57  { IO }                                         ' i2c (optional)
+    SCL1     = 56  { IO }
+
+
+CON { basic constants }
+
+    TEST_WORD_CT = 4
+
+    ' internal driver commands
+    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_RUN, DC_STOP, DC_SET_PARM, DC_GET_PARM, DC_OK
+
+    STACK_SIZE_LONGS = 128  ' was 64
+
+OBJ { our sensors }
+
+    pcf8575         : "isp_pcf8575"                 ' our device under test
+    tofSensor[4]    : "isp_vl53l5cx"                      ' our device under test
+    tvDebug         : "isp_hdmi_debug"              ' Our HDMI display
+
+VAR
+    LONG    cog
+
+DAT { run-time condition vars }
+
+    bUseHDMI        LONG    FALSE        ' set to TRUE to enable HDMI use/output
+    showHDMIDebug   LONG    FALSE
+
+    senseStack      LONG    0[64]
+
+    senseCog        LONG    0
+
+    readArray       WORD   0[TEST_WORD_CT]
+
+    screenTitle     BYTE    "-- 180° Field of View Sensor Debug --", 0
+
+DAT { debug display data }
+
+    nDriverCmd      long    DC_IDLE
+    nDriverArg      long    0
+    drvrResponse    long    0
+    drvrArgValue    long    0
+    taskStack       long    0[STACK_SIZE_LONGS]
+
+
+pub null()
+'' This is not a top-level object
+
+CON ' -------------- SET UP --------------
+
+PUB setTofPins(nBusNbr, pSDA, pSCL)
+'' Assign pins to I2C Bus #[0-1]
+''  (we have two TOF sensors on each I2C bus)
+    case nBusNbr
+        0:
+            tofSensor[0].setPins(pSDA, pSCL)
+            tofSensor[1].setPins(pSDA, pSCL)
+        1:
+            tofSensor[2].setPins(pSDA, pSCL)
+            tofSensor[3].setPins(pSDA, pSCL)
+        other:
+            debug("180: ERROR bad I2C bus number, aborted!")
+            abort
+
+PUB setExpanderPins(pSDA, pSCL, pinINT)
+'' Assign pins to I2C bus for our PCF8575 I/O Expander
+'' this listens to and controls all 4 TOF sensors
+    pcf8575.setPins(pSDA, pSCL, pinINT)
+
+PUB start() : Ok | eDvcStatus, bIsAlive
+'' Start all backend objects and our Overall driver Cog
+    ok := cog := cogspin(NEWCOG, taskRun180FovSensor(@nDriverCmd, @nDriverArg, @drvrArgValue, @drvrResponse), @taskStack) + 1
+
+PUB stop()
+'' Stop our driver-Cog and all backend objects
+    ' shtudown sensing
+    nDriverCmd := DC_STOP
+    debug("* waiting for driver shutdown")
+    repeat until nDriverCmd <> DC_STOP
+
+    debug("* is shutdown. Stopping all")
+    ' stop our cog
+    if cog
+        cogstop(cog - 1)
+        cog := 0
+
+CON ' -------------- COMMAND Interface --------------
+
+PUB setParm(nParmId, nParmValue) : nResponse | bTimedOut
+'' NOT WORKING: Example drive command,,,
+    drvrArg := nParmId
+    drvrArgValue := nParmValue
+    nDriverCmd := DC_SET_PARM
+    ' wait for command to be accepted
+    bTimedOut := waitForCommandAccepted()
+
+    nResponse := DRVR_DIDNT_RESPOND
+    if not bTimedOut
+        nResponse := drvrResponse
+
+PUB getParm(nParmId) : nParmValue | bTimedOut
+'' NOT WORKING: Example drive command,,,
+    drvrArg := nParmId
+
+    ' wait for command to be accepted
+    bTimedOut := waitForCommandAccepted()
+
+    nParmValue := DRVR_DIDNT_RESPOND
+    if not bTimedOut
+        nParmValue := drvrResponse
+
+PUB enableSensing(bEnable) : nResponse | bTimedOut  ' turn sensing on/off
+'' NOT WORKING: Example drive command,,,
+    ' block until prior message accepted
+    'repeat
+    '    if nDriverArg <> 0
+    '        waitms(50)
+    '    else
+     '       quit
+    ' request next message
+    nDriverCmd := (bEnable) ? DC_START : DC_STOP
+    ' wait for command to be accepted
+    bTimedOut := waitForCommandAccepted()
+    nResponse := DRVR_DIDNT_RESPOND
+    if not bTimedOut
+        nResponse := drvrResponse
+
+CON ' -------------- PRIVATE (Utility) Methods --------------
+
+PRI waitForCommandAccepted() : bTimedOut
+' wait for ack or timeout
+    bTimedOut := TRUE
+    repeat 200
+        if nDriverCmd == DC_OK
+            bTimedOut := FALSE
+            quit
+        waitms(10)
+
+    if bTimedOut
+        debug("180: request timed-out. ERROR?")
+
+CON ' -------------- TASK in own COG --------------
+
+PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse)
+    'repeat  ' stop here !!!
+    parmPtrCmd          := pDriverCmd
+    parmPtrArg          := pDriverArg
+    parmPtrArgValue     := pDriverArgValue
+    parmPtrResponse     := pDriverResponse
+
+    repeat
+        drvrCommand := LONG[pDriverCmd]
+        drvrArg := LONG[pDriverArg]
+
+        if drvrCommand <> DC_RUN and drvrCommand <> DC_IDLE
+            drvrCommand := handleDriverCommand()
+        waitms(1000)    ' idle for 1 sec.
+
+PRI handleDriverCommand() | bCanGoIdle
+    bCanGoIdle := FALSE
+    case LONG[parmPtrCmd]
+        DC_STOP:
+            ' stop our back-end comms
+            tofSensor[0].stop()
+            tofSensor[1].stop()
+            tofSensor[2].stop()
+            tofSensor[3].stop()
+            pcf8575.stop()
+            tvDebug.stop()
+            bCanGoIdle := TRUE
+        DC_START:
+
+        DC_SET_PARM:
+            handleSetupChange()
+        DC_GET_PARM:
+            handleSetupQuery()
+
+        other:
+            ' nothing to do here
+
+    ' if we are allowed to ACK command, do so
+    if bCanGoIdle
+        ' indicate we are done processing command
+        ackDriverCommand()
+
+PRI handleSetupChange(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse)
+
+PRI handleSetupQuery(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse)
+
+PRI ackDriverCommand()
+        ' indicate we are done processing command
+        long[parmPtrCmd] := DC_IDLE
+
+DAT { TASK Data }
+
+    drvrCommand     LONG    0
+    drvrArg         LONG    0
+
+    parmPtrCmd          LONG    0
+    parmPtrArg          LONG    0
+    parmPtrArgValue     LONG    0
+    parmPtrResponse     LONG    0
+
+CON { license }
+
+{{
+ -------------------------------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2022 Iron Sheep Productions, LLC
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+ =================================================================================================
+}}

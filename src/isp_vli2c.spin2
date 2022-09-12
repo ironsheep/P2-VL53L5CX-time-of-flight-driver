@@ -232,14 +232,15 @@ pub read(ackbit) : i2cbyte | scl, sda, tix4th, tixHlf, tix4thM3, tix4thM8, tix4t
 '' Read byte from I2C bus
 '' -- ackbit is state of ack bit
 ''    * usually NAK for last byte read
+
+  longmove(@scl, @sclpin, 3)                                    ' copy pins & timing
+
   ' setu corrections
   tixHlf := tix4th << 1
   tix4thM8 := tix4th - 8
   tix4thM3 := tix4th - 3
   tix4thLoUnFix := 2
   tix4thLoFix := tix4th - 20
-
-  longmove(@scl, @sclpin, 3)                                    ' copy pins & timing
 
   org
                 drvh      sda                                   ' pull-up sda
