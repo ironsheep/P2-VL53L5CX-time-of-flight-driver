@@ -42,15 +42,15 @@ CON { app io pins }
 
     PIN_HDMI_BASE = 8
 
-    PIN_PCF8575_SCL0    = 25
-    PIN_PCF8575_SDA0    = 26
-    PIN_PCF8575_INT     = 24
+    PIN_PCF8575_SDA0    = 16
+    PIN_PCF8575_SCL0    = 17
+    PIN_PCF8575_INT     = 18
 
-    PIN_VL75L5CX_SCL1   = 19
-    PIN_VL75L5CX_SDA1   = 18
+    PIN_VL75L5CX_SDA1   = 19
+    PIN_VL75L5CX_SCL1   = 20
 
-    PIN_VL75L5CX_SCL2   = 17
-    PIN_VL75L5CX_SDA2   = 16
+    PIN_VL75L5CX_SDA2   = 21
+    PIN_VL75L5CX_SCL2   = 22
 
 CON { basic constants }
 
@@ -63,8 +63,6 @@ OBJ { our sensors }
     tofSensor   : "isp_180degrFOV_TOFsensor"                      ' our device under test
 
 VAR
-    long    cog
-
     long    imageResolution
     long    frequencyHz8
     long    eRangingMode
@@ -87,268 +85,8 @@ PUB main()
     ' now start the sensor sensing
     tofSensor.start()
 
-    bDvcFound := locateSensor()
-
-    if bDvcFound
-
-{
-        ' --------------------------------------------------------------------------
-        '  UNCOMMENT this block to enable write/read-back testing of all mode setting
-        ' --------------------------------------------------------------------------
-        debug(" ")  ' blank line, sortof...
-        tofSensor.enableTestingDebug(FALSE) ' set to TRUE if want to see write/read buffers during test
-
-        ' do full test and validation of all set/get methods
-        configuredValue := tofSensor.VL53L5CX_RESOLUTION_8X8
-        tofSensor.setResolution(configuredValue)
-        eDvcStatus, readValue := tofSensor.getResolution()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setResolution()")
-
-        configuredValue := 6
-        tofSensor.setRangingFrequencyHz(configuredValue)
-        eDvcStatus, readValue := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setRangingFrequencyHz()")
-
-        'configuredValue := tofSensor.VL53L5CX_RANG_MODE_AUTONOMOUS
-        configuredValue := tofSensor.VL53L5CX_RANG_MODE_CONTINUOUS
-        tofSensor.setRangingMode(configuredValue)
-        eDvcStatus, readValue := tofSensor.getRangingMode()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setRangingMode()")
-
-        'configuredValue := tofSensor.VL53L5CX_POWER_MODE_SLEEP
-        configuredValue := tofSensor.VL53L5CX_POWER_MODE_WAKEUP
-        tofSensor.setPowerMode(configuredValue)
-        eDvcStatus, readValue := tofSensor.getPowerMode()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setPowerMode()")
-
-        configuredValue := 7    ' timeInMs
-        tofSensor.setIntegrationTime(configuredValue)
-        eDvcStatus, readValue := tofSensor.getIntegrationTime()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setIntegrationTime()")
-
-        configuredValue := 55    ' 55%
-        tofSensor.setSharpenerPercent(configuredValue)
-        eDvcStatus, readValue := tofSensor.getSharpenerPercent()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setSharpenerPercent()")
-
-        configuredValue := tofSensor.VL53L5CX_TGT_ORDER_CLOSEST
-        'configuredValue := tofSensor.VL53L5CX_TGT_ORDER_STRONGEST
-        tofSensor.setTargetOrder(configuredValue)
-        eDvcStatus, readValue := tofSensor.getTargetOrder()                     ' Query sensor for
-        checkAndShowResult(configuredValue, readValue, eDvcStatus, @"setTargetOrder()")
-
-        debug("* STOPPED for evaluation of display")
-        repeat   ' hold here for eval
-'}
-
-        configuredValue := tofSensor.VL53L5CX_RESOLUTION_8X8
-        tofSensor.setResolution(configuredValue)
-
-        eDvcStatus, imageResolution := tofSensor.getResolution()                     ' Query sensor for
-        imageWidth := sqrt imageResolution                               ' Calculate printing width
-        debug("* imageResolution = ", udec_(imageResolution), udec(eDvcStatus))
-        debug("* imageWidth = ", udec_(imageWidth))
-
-        waitms(500) ' finish displaying before starting cog
-
-        ' start ranging result display loop
-        bDataReady := FALSE     ' have task wait until data is present
-        cog := cogspin(NEWCOG, taskMonitorRanging(imageWidth), @senseStack) + 1  ' start TOF Listener
-        waitms(500) ' let task announce itself in debug, then proceed
-
-        tofSensor.enableIODebug(FALSE) ' set to TRUE if want to see write/read buffers during test
-{
-        ' --------------------------------------------------------------------------
-        '  UNCOMMENT this block to see initial/default driver values
-        ' --------------------------------------------------------------------------
-        tofSensor.enableTestingDebug(FALSE) ' set to TRUE if want to see write/read buffers during test
-        eDvcStatus, frequencyHz8 := tofSensor.getRangingFrequencyHz()                     ' Query sensor for
-        showReadValue(@"frequencyHz8", frequencyHz8, eDvcStatus)
-
-        eDvcStatus, eRangingMode := tofSensor.getRangingMode()                     ' Query sensor for
-        showReadValue(@"eRangingMode", eRangingMode, eDvcStatus)
-
-        eDvcStatus, ePowerMode := tofSensor.getPowerMode()
-        showReadValue(@"ePowerMode", ePowerMode, eDvcStatus)
-
-        eDvcStatus, timeMsec32 := tofSensor.getIntegrationTime()
-        showReadValue(@"timeMsec32", timeMsec32, eDvcStatus)
-
-        eDvcStatus, percent8 := tofSensor.getSharpenerPercent()
-        showReadValue(@"percent8", percent8, eDvcStatus)
-
-        eDvcStatus, targetOrder := tofSensor.getTargetOrder()
-        showReadValue(@"targetOrder", targetOrder, eDvcStatus)
-
-        debug("* STOPPED for evaluation of display")
-        repeat  ' hold here for eval
-'}
-
-        tofSensor.startRanging()
-
-        readCt := 10    ' set max read count
-        repeat  until readCt <= 0
-            ' wait for sensor to start ranging
-
-            if not tofSensor.isRanging()
-                debug("- ranging not started, waiting...")
-                waitms(5000) ' Small delay between polling (5 sec)
-                next
-
-            ' is ranging, now let's show data every 5 sec
-            ' Poll sensor for new data
-            eDvcStatus, bDataReturned := tofSensor.isDataReadyToUnload()
-            if bDataReturned
-                eDvcStatus, bDataUnloaded := tofSensor.unloadRangingData()     ' Read distance data into array
-                if bDataUnloaded
-                    ' tell consumer
-                    bDataReady := TRUE
-                    ' now wait for consumer...
-                    readCt--    ' count this one
-                    repeat until bDataReady == FALSE ' hold until BG task displays it
-
-                debug("* Main TEST HOLD")
-                repeat
-            else
-                waitms(2000) ' Small delay between polling (2 sec)
-
-        ' Stop Measurements
-        tofSensor.stopRanging()
-
-    repeat  ' halt here for now
-
-CON
-
-   MAX_SAMPLES_PER_ROW = 8
-
-VAR
-
-    LONG samples32[MAX_SAMPLES_PER_ROW]
-    WORD samples16[MAX_SAMPLES_PER_ROW]
-    BYTE samples8[MAX_SAMPLES_PER_ROW]
-
-PRI taskMonitorRanging(imageWidth) | x, y, LONG samples[8]
-' TASK: TOF Listener
-
-    repeat  ' forever
-
-        debug("* DTA-TSK: Waiting for data...width/height = ", udec_(imageWidth))
-        debug(" ")
-        ' wait for data to be ready
-        repeat until bDataReady == TRUE ' hold until BG task displays it
-        debug("* DTA-TSK: Have data, processing")
-
-        ' The ST library returns the data transposed from zone mapping shown in datasheet
-        ' Pretty-print data with increasing y, decreasing x to reflect reality
-        'for (int y = 0 ; y <= imageWidth * (imageWidth - 1) ; y += imageWidth)
-        debug(" -- Reflectance")
-        repeat y from 0 to imageWidth - 1
-            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
-            repeat x from imageWidth -1 to 0 step -1
-                samples8[x] := tofSensor.sampleReflectance((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_byte_array_(@samples8, imageWidth))
-        debug(" ")
-        '{
-        debug(" -- TargetStatus")
-        repeat y from 0 to imageWidth - 1
-            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
-            repeat x from imageWidth -1 to 0 step -1
-                samples8[x] := tofSensor.sampleTargetStatus((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_byte_array_(@samples8, imageWidth))
-        debug(" ")
-        '}
-        '{
-        debug(" -- Target Distance")
-        repeat y from 0 to imageWidth - 1
-            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
-            repeat x from imageWidth -1 to 0 step -1
-                samples16[x] := tofSensor.sampleDistanceMM((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_word_array_(@samples16, imageWidth))
-        debug(" ")
-        '}
-        '{
-        debug(" -- NbTgtDetected")
-        repeat y from 0 to imageWidth - 1
-            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
-            repeat x from imageWidth -1 to 0 step -1
-                samples8[x] := tofSensor.sampleNbTgtDetected((y * imageWidth) + x)
-            debug("- ", udec(y), ": ", udec_byte_array_(@samples8, imageWidth))
-        debug(" ")
-        '}
-        debug("* DTA-TSK: Done with data")
-        bDataReady := FALSE
 
 
-PUB sampleReflectance(index) : nValue8 | validIndex
-PUB sampleTargetStatus(index) : nValue8 | validIndex
-
-CON { ------ PRIVATE (Utility) Methods ------ }
-
-PRI showReadValue(pMessage, nValue, nDvcStatus)
-    if nDvcStatus == 0
-        debug(" * ", zstr_(pMessage), " = ", udec_(nValue))
-    else
-        debug(" * ", zstr_(pMessage), " = ", udec_(nValue), udec(nDvcStatus))
-
-PRI checkAndShowResult(valueSet, valueRead, eDvcStatus, pMessage)
-    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-        debug("--> TEST ", zstr_(pMessage), " ERROR ", udec(eDvcStatus))
-    elseif valueSet == valueRead - 1 or valueSet == valueRead + 1
-        debug("--> TEST ", zstr_(pMessage), "  PASS: OK (w/rounding err) ")
-    elseif valueSet <> valueRead
-        debug("--> TEST ", zstr_(pMessage), " ERROR readback failure: ", udec(valueSet), " <> ", udec(valueRead))
-    else
-        debug("--> TEST ", zstr_(pMessage), "  PASS: OK! ")
-    debug(" ")
-
-
-PRI locateSensor() : ok | bDevicePresent, addrFound
-    ' find and configure our mpu9dof device
-    debug("* Setup...")
-    tofSensor.enableDebug(TRUE)
-    bDevicePresent := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 100kHz, no pull-ups
-    if bDevicePresent
-        addrFound := tofSensor.getI2CAddress()
-        ok := true
-        if(addrFound <> tofSensor.DVC_NOT_FOUND)
-            debug("* Found at i2c addr: ", uhex_byte_(addrFound))
-        else
-            debug("* ERROR: Found no devices")
-            ok := false
-
-DAT { misc messages }
-
-minusMsg    BYTE    "-",0
-plusMsg    BYTE    0
-
-PRI unscale(value, scale) : intPart, decimalPart, pSign
-    intPart := value / scale
-    decimalPart := value // scale
-    pSign := (value < 0) ? @minusMsg : @plusMsg
-    if decimalPart < 0
-        decimalPart := 0 - decimalPart
-    'term.fstr5(string("* Value %d scale(%d) -> %s%d.%d"), value, scale, pSign, intPart, decimalPart)
-    'debug("* Value ", udec_(value), " scale(", udec_(scale), ") -> ", zstr_(pSign), udec(intPart), ".", udec(decimalPart))
-    debug(`demoLog '* Value `(value) scale[`(scale)] -> ', zstr_(pSign), '`(intPart).`(decimalPart)')
-
-
-PRI tearDown()
-    ' stop anything that needs to be...
-    tofSensor.stop()    ' pull ourself off the i2c bus
-
-CON { --- TASK: keep live mpu9dof data --- }
-
-
-PRI taskReadSensor() | startTicks, startMS, statusOK
-    ' start for this cog too
-
-PRI resetSensor(ok)
-    if(ok)
-        'tofSensor.configDefault()
-        waitms(10)  ' guard
-
-
-CON { -------------- demo-0 -------------- }
 
 
 

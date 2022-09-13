@@ -91,6 +91,8 @@ CON { device/driver constants }
 
     PCF8575_I2C_ADDR_0      = $20
 
+    INT_PULL_UP             = i2c_bus.PU_15K
+
 PUB null()
 '' This is not a top-level object
 
@@ -102,26 +104,56 @@ PUB enableDebug(bEnable)
     else
         debug("*PCF: DBG off")
 
-PUB start(pinSCL, pinSDA, pinINT) : bDevicePresent
-    '' Start the device running
+PUB setPins(pSDA, pSCL, pinINT)
+'' Record PINs for later Deferred Start [startUsingPins()] for use by driver cog
+    bPinsSetUp := setupPins(pSCL, pSDA, pinINT)  ' configure pin numbers if not already
+
+PUB startUsingPins() : bDevicePresent | pullup, intPin
+'' Deferred Start for use by driver cog
+''  MUST be preceede by setPins()
+    if bPinsSetUp
+        i2c_bus.setup(pin_scl, pin_sda, FREQ_KHZ_PCF8575_I2C, PULL_UP_PCF8575_I2C)
+        bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
+
+        ' per our data sheet let's put a pull up on our int pin
+        pullup := INT_PULL_UP                        ' 15K
+        intPin :=  pin_int                          ' amke accessible to PASM
+
+        org
+                wrpin     pullup, intPin           ' configure PULL-UP for INTb pin
+                dirl      intPin                   ' and set it as input
+        end
+
+PUB start(pinSCL, pinSDA, pinINT) : bDevicePresent | pullup, intPin
+'' Start the device running
     bPinsSetUp := setupPins(pinSCL, pinSDA, pinINT)  ' configure pin numbers if not already
     if bPinsSetUp
         i2c_bus.setup(pin_scl, pin_sda, FREQ_KHZ_PCF8575_I2C, PULL_UP_PCF8575_I2C)
         bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
-        'if bShowDebug
-        '    debug(`8575log '* Started' 10)
 
-PUB deviceID() : eDevice
-    '' Return indication (enum value) of if and which device we found on i2c bus
-    eDevice := dvcI2CAddr
+        ' per our data sheet let's put a pull up on our int pin
+        pullup := INT_PULL_UP                        ' 15K
+        intPin :=  pin_int                          ' amke accessible to PASM
+
+        org
+                wrpin     pullup, intPin           ' configure PULL-UP for INTb pin
+                dirl      intPin                   ' and set it as input
+        end
+
+        'if bShowDebug
+        '    debug("* PCF8575 Started")
 
 PUB stop()
-    '' Stop our i2c bus use and float all pins
+'' Stop our i2c bus use and float all pins
     ' no i2c_buss call needed, simply release all our pins
     if bPinsSetUp
         floatDvcPins()
         'if bShowDebug
-        '    debug(`8575log '* Stopped' 10)
+        '    debug("* PCF8575 Stopped")
+
+PUB deviceID() : eDevice
+'' Return indication (enum value) of if and which device we found on i2c bus
+    eDevice := dvcI2CAddr
 
 CON  { ---- Synthesized Pin Direction Control ---- }
 

@@ -38,42 +38,25 @@ CON { basic constants }
     TEST_WORD_CT = 4
 
     ' internal driver commands
-    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_RUN, DC_STOP, DC_SET_PARM, DC_GET_PARM, DC_OK
+    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_CFG_BUS1, DC_CFG_BUS2, DC_RUN, DC_STOP, DC_SET_PARM, DC_GET_PARM
+    #$E0, RSP_UNKNOWN, RSP_OK, RSP_ERROR
+
+    #$10, PID_RANGING_FREQUENCY, PID_RANGING_MODE, PID_RESOLUTION, PID_POWER_MODE
+    #$14, PID_INTEGRATION_TIME, PID_SHARPENER_PERCENT, PID_TARGET_ORDER
 
     STACK_SIZE_LONGS = 128  ' was 64
+
+DAT { run-time condition vars }
+
+    bUseHDMI        LONG    TRUE        ' set to TRUE to enable HDMI use/output
+    showHDMIDebug   LONG    FALSE
+
 
 OBJ { our sensors }
 
     pcf8575         : "isp_pcf8575"                 ' our device under test
     tofSensor[4]    : "isp_vl53l5cx"                      ' our device under test
     tvDebug         : "isp_hdmi_debug"              ' Our HDMI display
-
-VAR
-    LONG    cog
-
-DAT { run-time condition vars }
-
-    bUseHDMI        LONG    FALSE        ' set to TRUE to enable HDMI use/output
-    showHDMIDebug   LONG    FALSE
-
-    pinHDMIbase     LONG    0
-
-    senseStack      LONG    0[64]
-
-    senseCog        LONG    0
-
-    readArray       WORD   0[TEST_WORD_CT]
-
-    screenTitle     BYTE    "-- 180° Field of View Sensor Debug --", 0
-
-DAT { debug display data }
-
-    nDriverCmd      long    DC_IDLE
-    nDriverArg      long    0
-    drvrResponse    long    0
-    drvrArgValue    long    0
-    taskStack       long    0[STACK_SIZE_LONGS]
-
 
 pub null()
 '' This is not a top-level object
@@ -88,12 +71,14 @@ PUB setTofPins(nBusNbr, pSDA, pSCL)
 '' Assign pins to I2C Bus #[0-1]
 ''  (we have two TOF sensors on each I2C bus)
     case nBusNbr
-        0:
-            tofSensor[0].setPins(pSDA, pSCL)
-            tofSensor[1].setPins(pSDA, pSCL)
+        2:
+            ' devices 1 and 2
+            tofSensor[0].setPinsAndID(pSDA, pSCL, 1)
+            tofSensor[1].setPinsAndID(pSDA, pSCL, 2)
         1:
-            tofSensor[2].setPins(pSDA, pSCL)
-            tofSensor[3].setPins(pSDA, pSCL)
+            ' devices 3 and 4
+            tofSensor[2].setPinsAndID(pSDA, pSCL, 3)
+            tofSensor[3].setPinsAndID(pSDA, pSCL, 4)
         other:
             debug("180: ERROR bad I2C bus number, aborted!")
             abort
@@ -116,6 +101,22 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
 
     ok := cog := cogspin(NEWCOG, taskRun180FovSensor(@nDriverCmd, @nDriverArg, @drvrArgValue, @drvrResponse), @taskStack) + 1
 
+    'wait driver running
+    debug("* waiting for driver started")
+    repeat until nDriverCmd <> DC_IDLE
+
+    ' tell driver to set-up bus 1
+    debug("* Starting BUS 1 of 2")
+    nDriverCmd := DC_CFG_BUS1
+
+    debug("* waiting for BUS 1 ready")
+    repeat until drvrResponse <> RSP_UNKNOWN
+    if drvrResponse == RSP_ERROR
+        debug("* waiting BUS 1 ready")
+
+
+    ' tell driver to set-up bus 2
+
 PUB stop()
 '' Stop our driver-Cog and all backend objects
     ' shtudown sensing
@@ -129,21 +130,6 @@ PUB stop()
         cogstop(cog - 1)
         cog := 0
 
-DAT { run-time condition vars }
-
-    bUseHDMI        long    TRUE        ' set to TRUE to enable HDMI use/output
-    showHDMIDebug   long    FALSE
-
-    senseStack      long    0[64]
-
-    senseCog        long    0
-
-    screenTitle     byte    "-- TOF Sensor object Debug --", 0
-
-    bDataReady      long    FALSE
-
-    configuredValue long    0
-    readValue       long    0
 
 CON ' -------------- COMMAND Interface --------------
 
@@ -186,13 +172,15 @@ PUB enableSensing(bEnable) : nResponse | bTimedOut  ' turn sensing on/off
     if not bTimedOut
         nResponse := drvrResponse
 
+
+
 CON ' -------------- PRIVATE (Utility) Methods --------------
 
 PRI waitForCommandAccepted() : bTimedOut
 ' wait for ack or timeout
     bTimedOut := TRUE
     repeat 200
-        if nDriverCmd == DC_OK
+        if nDriverCmd == DC_IDLE
             bTimedOut := FALSE
             quit
         waitms(10)
@@ -200,26 +188,113 @@ PRI waitForCommandAccepted() : bTimedOut
     if bTimedOut
         debug("180: request timed-out. ERROR?")
 
+VAR { driver internal variables }
+    LONG    cog
+    LONG    pinHDMIbase
+
 CON ' -------------- TASK in own COG --------------
 
-PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse)
+DAT { debug display data }
+
+    screenTitle     BYTE    "-- 180° Field of View Sensor Debug --", 0
+
+    nDriverCmd      long    DC_UNKNOWN
+    nDriverArg      long    0
+    drvrResponse    long    0
+    drvrArgValue    long    0
+    taskStack       long    0[STACK_SIZE_LONGS]
+
+    bDevicePreset   long    FALSE
+
+PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse) | nbit, ok
     'repeat  ' stop here !!!
     parmPtrCmd          := pDriverCmd
     parmPtrArg          := pDriverArg
     parmPtrArgValue     := pDriverArgValue
     parmPtrResponse     := pDriverResponse
 
-    repeat
-        drvrCommand := LONG[pDriverCmd]
-        drvrArg := LONG[pDriverArg]
+    Debug("TSK: Starting...")
+    ' init device complex
+    ' ensure PCF8575 is up
+    bDevicePreset := pcf8575.startUsingPins()
+    if NOT bDevicePreset
+        debug("TSK:PCF8575 not responding!")
 
-        if drvrCommand <> DC_RUN and drvrCommand <> DC_IDLE
-            drvrCommand := handleDriverCommand()
-        waitms(1000)    ' idle for 1 sec.
+    ' Condition VL53L5CX device I/O lines driven by PCF8575
+    '   LPn to LOW
+    '   INTb as input
+    '   PWREN to HIGH
+    '   I2C_RST to HIGH
+    repeat nbit from 0 to 15
+        if nbit >= 8 and nbit <= 11
+            pcf8575.setBitDirection(nbit, pcf8575.BIT_IS_INPUT)
+        else
+            pcf8575.setBitDirection(nbit, pcf8575.BIT_IS_OUTPUT)
+            pcf8575.setOutputBitValue(nbit, 1)
 
-PRI handleDriverCommand() | bCanGoIdle
+    dropLPnBits()
+    ok := setTOFAddresses()
+    if not ok
+        debug("TSK:ERROR: task not started")
+    else
+    ' mark that driver is runnig
+        Debug("TSK: Running...")
+        LONG[pDriverResponse] := RSP_UNKNOWN
+        LONG[pDriverCmd] := DC_IDLE
+
+        repeat
+            drvrCommand := LONG[pDriverCmd]
+            drvrArg := LONG[pDriverArg]
+
+            if drvrCommand <> DC_RUN and drvrCommand <> DC_IDLE
+                handleDriverCommand()
+
+            waitms(1000)    ' idle for 1 sec.
+
+PRI dropLPnBits() | nBit
+' Clear all 4 LPn bits (disables TOF device COMM.)
+    ' LPn port bits are 4-7
+    repeat nbit from 4 to 7
+        pcf8575.setOutputBitValue(nbit, 0)
+
+PRI enableLPn(nLPnNbr) | nBit
+' LPn bits are numbered 1-4 for our 4 TOF sensors 1-4 [LPn bits of Expander are 4-7]
+    if nLPnNbr >= 1 and nLPnNbr <= 4
+        nBit := (nLPnNbr - 1) + 4   ' +4: LPn port bits are 4-7
+        pcf8575.setOutputBitValue(nbit, 1)
+
+PRI disableLPn(nLPnNbr) | nBit
+' LPn bits are numbered 1-4 for our 4 TOF sensors 1-4 [LPn bits of Expander are 4-7]
+    if nLPnNbr >= 1 and nLPnNbr <= 4
+        nBit := (nLPnNbr - 1) + 4   ' +4: LPn port bits are 4-7
+        pcf8575.setOutputBitValue(nbit, 0)
+
+DAT
+    '                 TOF #   1    2    3    4
+    '             I2C Bus #   2    2    1    1
+    TOFdeviceAddrTbl   BYTE    $54, $56, $58, $5A
+
+PRI setTOFAddresses() : ok | nTOFNbr, bDevicePresent, eDvcStatus
+    ok := TRUE
+    repeat nTOFNbr from 1 to 4
+        enableLPn(nTOFNbr)
+        bDevicePresent := tofSensor.startUsingPins()
+        if not bDevicePresent
+            debug("TSK:ERROR missing TOF device, aborting startup")
+            ok := FALSE
+            quit
+        eDvcStatus :=tofSensor.setI2CAddress(BYTE[@TOFdeviceAddrTbl][nTOFNbr - 1])
+        if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+            debug("TSK:ERROR failed to set device i2c addr, aborting startup")
+            ok := FALSE
+            quit
+    disableLPn(nTOFNbr)
+
+PRI handleDriverCommand() | bCanGoIdle, nCommand
     bCanGoIdle := FALSE
-    case LONG[parmPtrCmd]
+    nCommand := LONG[parmPtrCmd]
+    debug("TSK:Handling ", udec(nCommand))
+    case nCommand
         DC_STOP:
             ' stop our back-end comms
             tofSensor[0].stop()
@@ -244,9 +319,17 @@ PRI handleDriverCommand() | bCanGoIdle
         ' indicate we are done processing command
         ackDriverCommand()
 
-PRI handleSetupChange(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse)
+PRI reAddressTOFsensors()
+    ' condition all OUTPUT lines to 4 sensors
+    ' set all LPn's low (turn of everybody)
+    ' for ea. sensor
+    '    enable LPn then set I2C address
+    '    ensure TOF now responds at new address
+    ' DONE
 
-PRI handleSetupQuery(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse)
+PRI handleSetupChange()
+
+PRI handleSetupQuery()
 
 PRI ackDriverCommand()
         ' indicate we are done processing command

@@ -100,7 +100,7 @@ con { Fixed io pins }
 
 OBJ { Objects this object uses }
 
-    i2c_bus     : "isp_vl53_i2c_dec"                            ' better timing
+    i2c_bus     : "isp_i2c"                                     ' better timing
 
 VAR { Instance Variables - Global }
 
@@ -110,6 +110,7 @@ VAR { Instance Variables - Global }
     LONG    pin_rst
     LONG    pin_lpn
     LONG    pin_pwren
+    LONG    instanceID
 
     LONG    bPinsSetUp
     LONG    bDeviceFound
@@ -123,8 +124,8 @@ VAR { Instance Variables - Global }
     BYTE    requestedResolution
 
 CON { driver Settings }
-
-    PULL_UP_VL53L5CX_I2C = i2c_bus.PU_NONE
+' PU_NONE, PU_1K5, PU_3K3, PU_15K
+    PULL_UP_VL53L5CX_I2C = i2c_bus.PU_15K
     'FREQ_IN_KHZ_VL53L5CX_I2C = 1064              ' use 1 MHZ (1000 KHz) NOTE: at 270MHz clock: 1000 is 950KHz, 1010 is 965KHz, 1035 is 980KHz, 1050 same,
     FREQ_IN_KHZ_VL53L5CX_I2C = 1000              ' use 1 MHZ (1000 KHz)
 
@@ -135,16 +136,48 @@ CON ' --- Driver Setup ---
 PUB null()
 '' This is not a top-level object
 
+PUB setPinsAndID(pSDA, pSCL, nID) : ok
+'' Record PINs for later Deferred Start [startUsingPins()] for use by driver cog
+' SPECIAL for use when in multi-sensor config
+
+    ok := true
+
+    pin_scl := pSCL
+    pin_sda := pSDA
+    instanceID := nID
+
+    bPinsSetUp := TRUE
+
+PUB startUsingPins() : bDevicePresent | eDvcStatus, bIsAlive
+'' Deferred Start for use by driver cog
+''  MUST be preceede by setPins()
+' SPECIAL for use when in multi-sensor config
+    bShowDebug := FALSE     ' no, not til requested
+    bShowIODebug := FALSE   ' no, not til requested
+    bSensorActive := FALSE  ' no, not initially
+
+    if bPinsSetUp
+        debug("VL53: #", udec_(instanceID), " startUsingPins() ID device address...")
+        i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
+        bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
+        if bDeviceFound
+            eDvcStatus, bIsAlive := isAlive()
+            if eDvcStatus == VL53L5CX_STATUS_OK and bIsAlive
+                ' nothing yet...
+            else
+                bDevicePresent := FALSE
+
 PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | eDvcStatus, bIsAlive
 '' Start the device running
     bShowDebug := FALSE     ' no, not til requested
     bShowIODebug := FALSE   ' no, not til requested
     bSensorActive := FALSE  ' no, not initially
+    instanceID := 0
 
     bPinsSetUp := setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)  ' configure pin numbers if not already
     if bPinsSetUp
         i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
-        debug("VL53: ID device address...")
+        debug("VL53: start() ID device address...")
         bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
         if bDeviceFound
             eDvcStatus, bIsAlive := isAlive()
@@ -1235,6 +1268,9 @@ CON { PRIVATE (Utility) Methods }
 PRI setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : ok
     ' Configure pin numbers if not already
     '   return T/F where T means SUCCESS and F means FAILED - bad basepin value
+
+    ' NOTE: this is for a dedicated single sensor (not part of our 4-sensor array)
+
     ok := true
 
     pin_scl := pinSCL

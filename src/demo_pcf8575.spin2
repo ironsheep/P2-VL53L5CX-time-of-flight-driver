@@ -42,9 +42,9 @@ CON { app io pins }
 
     PIN_HDMI_BASE = 8
 
-    PIN_PCF8575_SCL     = 25
-    PIN_PCF8575_SDA     = 26
-    PIN_PCF8575_INT     = 24
+    PIN_PCF8575_SDA     = 16
+    PIN_PCF8575_SCL     = 17
+    PIN_PCF8575_INT     = 18
 
 CON { basic constants }
 
