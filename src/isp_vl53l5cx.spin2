@@ -124,8 +124,8 @@ VAR { Instance Variables - Global }
     BYTE    requestedResolution
 
 CON { driver Settings }
-' PU_NONE, PU_1K5, PU_3K3, PU_15K
-    PULL_UP_VL53L5CX_I2C = i2c_bus.PU_15K
+' PU_NONE-nope?, PU_1K5-nope, PU_3K3-(1 dvc), PU_15K-(1 dvc)
+    PULL_UP_VL53L5CX_I2C = i2c_bus.PU_1K5
     'FREQ_IN_KHZ_VL53L5CX_I2C = 1064              ' use 1 MHZ (1000 KHz) NOTE: at 270MHz clock: 1000 is 950KHz, 1010 is 965KHz, 1035 is 980KHz, 1050 same,
     FREQ_IN_KHZ_VL53L5CX_I2C = 1000              ' use 1 MHZ (1000 KHz)
 
@@ -140,24 +140,36 @@ PUB setPinsAndID(pSDA, pSCL, nID) : ok
 '' Record PINs for later Deferred Start [startUsingPins()] for use by driver cog
 ' SPECIAL for use when in multi-sensor config
 
+    ' condition these on first call to this driver
+    bShowDebug := FALSE     ' no, not til requested
+    bShowIODebug := FALSE   ' no, not til requested
+    bSensorActive := FALSE  ' no, not initially
+
     ok := true
 
+    ' mark these pins as not provided
+    pin_pwren := -1
+    pin_lpn := -1
+    pin_int := -1
+    pin_rst := -1
+
+    ' remember the pins we are given
     pin_scl := pSCL
     pin_sda := pSDA
+
+    ' set this instances' ID
     instanceID := nID
 
+    ' notify that we do have pins and are ready
     bPinsSetUp := TRUE
 
 PUB startUsingPins() : bDevicePresent | eDvcStatus, bIsAlive
 '' Deferred Start for use by driver cog
 ''  MUST be preceede by setPins()
 ' SPECIAL for use when in multi-sensor config
-    bShowDebug := FALSE     ' no, not til requested
-    bShowIODebug := FALSE   ' no, not til requested
-    bSensorActive := FALSE  ' no, not initially
 
     if bPinsSetUp
-        debug("VL53: #", udec_(instanceID), " startUsingPins() ID device address...")
+        debug("VL53: #", udec_(instanceID), " startUsingPins() ID dvc address...")
         i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
         bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
         if bDeviceFound
@@ -169,6 +181,8 @@ PUB startUsingPins() : bDevicePresent | eDvcStatus, bIsAlive
 
 PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | eDvcStatus, bIsAlive
 '' Start the device running
+
+    ' condition these on first call to this driver
     bShowDebug := FALSE     ' no, not til requested
     bShowIODebug := FALSE   ' no, not til requested
     bSensorActive := FALSE  ' no, not initially
@@ -177,7 +191,7 @@ PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | e
     bPinsSetUp := setupPins(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN)  ' configure pin numbers if not already
     if bPinsSetUp
         i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
-        debug("VL53: start() ID device address...")
+        'debug("VL53: start() ID dvc address...")
         bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
         if bDeviceFound
             eDvcStatus, bIsAlive := isAlive()
@@ -228,13 +242,13 @@ PUB enableTestingDebug(bEnable)
 '' Turn on/off file-internal I/O debug messaging (bEnable = T/F where T means show debug messages from this object)
     bShowTestingDebug := bEnable
     if bShowTestingDebug
-        debug("VL53: Testing-mode DBG ON")
+        debug("VL53: Test DBG ON")
     else
-        debug("VL53: Testing-mode DBG Off")
+        debug("VL53: Test DBG Off")
 
 PUB enableMyIOToo() | pScl, pSda, pnInt, pRst, pLpn, pPwren  ' whoa pInt collides with internal var?!
 '' Allow new cog to do I/O's too
-    debug("VL53: I/O PINs Setup new COG")
+    'debug("VL53: I/O PINs Setup new COG")
     if bPinsSetUp
         pScl    :=  pin_scl    ' copy pins to pasm acccesible location
         pSda    :=  pin_sda
@@ -271,13 +285,13 @@ PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTe
     bStatusNotOK |= writeByte(VL53L5CX_REG_CONTROL, VL53L5CX_VAL_CTL_RUN)                  ' |= WrByte(&(p_dev->platform), 0x7fff, 0x02)
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
-        debug("TOF: chip detect failure!")
+        debug("VL53: chip detect failure!")
     else
         if ((device_id == $F0) and (revision_id == $02))
             bIsAlive := TRUE
-            debug("TOF: is alive!")
+            debug("VL53 #", udec_(instanceID), " is alive!")
         else
-            debug("TOF: chip detect: BAD ID from chip!")
+            debug("VL53: chip detect: BAD ID from chip!")
 
 PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
 '' Reconfigure device to respond to new i2c device address
@@ -296,6 +310,7 @@ PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
     if eDvcStatus == VL53L5CX_STATUS_OK
+        waitus(5)   ' put gap in LA display
         idDevice()
 
 PUB getI2CAddress() : nDvcI2CAddr
@@ -491,7 +506,7 @@ PUB getResolution() : eDvcStatus, eResolution | bStatusNotOK
     eResolution := BYTE[@dciWorkBuffer][0] * BYTE[@dciWorkBuffer][1] '  p_dev->temp_buffer[0x00] * p_dev->temp_buffer[0x01]
 
     if eResolution <> VL53L5CX_RESOLUTION_4X4 and eResolution <> VL53L5CX_RESOLUTION_8X8
-        debug("VL53: ERROR: getResolution() bad value from device! ", udec(eResolution))
+        debug("VL53: ERROR: getResolution() bad value from dvc! ", udec(eResolution))
         eDvcStatus := VL53L5CX_STATUS_BAD_DATA
 
     if bStatusNotOK and eDvcStatus == VL53L5CX_STATUS_OK
@@ -623,7 +638,7 @@ PUB getSharpenerPercent() : eDvcStatus, percent8 | bStatusNotOK
 ''   NOTE: Sharpener can be changed to blur more or less zones depending of the application.
 '' Alternatively returns {eDvcStatus}:
 ''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
-    debug("VL53: Get Sharpener Percent")
+    debug("VL53: Get Sharpener %")
     eDvcStatus := VL53L5CX_STATUS_OK
 
     'status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_SHARPENER, 16)
@@ -1325,13 +1340,16 @@ PRI floatPins()
 
 PRI idDevice() : eDevice | bFoundAddr, possI2Caddr, dvcDiff
     ' Identify the address our device is at on the i2c bus
-    floatPins()
-    ' enable 5v to 3.3v power supply
-    pinh(pin_pwren)             ' assert pwr enable
-    waitus(2)
 
-    ' condition the chip drive
-    pinh(pin_lpn)               ' assert LPn (enable device selection)
+    ' if we are running as single TOF chip then condition lines
+    if pin_pwren <> -1 and pin_lpn <> -1
+        floatPins()
+        ' enable 5v to 3.3v power supply
+        pinh(pin_pwren)             ' assert pwr enable
+        waitus(2)
+
+        ' condition the chip drive
+        pinh(pin_lpn)               ' assert LPn (enable device selection)
 
     bFoundAddr := false
     ' scan a range of 10 addresses ($52, $54, etc.)
@@ -1353,9 +1371,9 @@ PRI idDevice() : eDevice | bFoundAddr, possI2Caddr, dvcDiff
 
     if (bFoundAddr)
         if bShowDebug
-            debug("VL53: idDevice() found Addr: ", uhex_byte(idDevice()))
+            debug("VL53: idDvc() found Addr: ", uhex_byte_(dvcI2CAddr))
     else
-        debug("* idDevice() NOT found")
+        debug("VL53:  idDvc() NOT found")
 
 
 PRI initDriver()

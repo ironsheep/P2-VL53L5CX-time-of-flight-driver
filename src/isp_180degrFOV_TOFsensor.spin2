@@ -206,7 +206,7 @@ DAT { debug display data }
 
     bDevicePreset   long    FALSE
 
-PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse) | nbit, ok
+PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse) | nbit, ok, nbrSensorsFound
     'repeat  ' stop here !!!
     parmPtrCmd          := pDriverCmd
     parmPtrArg          := pDriverArg
@@ -218,7 +218,7 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
     ' ensure PCF8575 is up
     bDevicePreset := pcf8575.startUsingPins()
     if NOT bDevicePreset
-        debug("TSK:PCF8575 not responding!")
+        debug("TSK: PCF8575 no answ!")
 
     ' Condition VL53L5CX device I/O lines driven by PCF8575
     '   LPn to LOW
@@ -232,12 +232,21 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
             pcf8575.setBitDirection(nbit, pcf8575.BIT_IS_OUTPUT)
             pcf8575.setOutputBitValue(nbit, 1)
 
+    setLPnBits()
+    resetSensors()
+
+    ' quick test to checkour our LA probing...
     dropLPnBits()
-    ok := setTOFAddresses()
-    if not ok
-        debug("TSK:ERROR: task not started")
+    clearINTBits()
+
+    ok, nbrSensorsFound := setTOFAddresses()
+    if nbrSensorsFound > 0
+        setLPnBits()
+
+    if not ok and nbrSensorsFound == 0
+        debug("TSK: ERROR: not started")
     else
-    ' mark that driver is runnig
+        ' mark that driver is runnig
         Debug("TSK: Running...")
         LONG[pDriverResponse] := RSP_UNKNOWN
         LONG[pDriverCmd] := DC_IDLE
@@ -251,49 +260,10 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
 
             waitms(1000)    ' idle for 1 sec.
 
-PRI dropLPnBits() | nBit
-' Clear all 4 LPn bits (disables TOF device COMM.)
-    ' LPn port bits are 4-7
-    repeat nbit from 4 to 7
-        pcf8575.setOutputBitValue(nbit, 0)
-
-PRI enableLPn(nLPnNbr) | nBit
-' LPn bits are numbered 1-4 for our 4 TOF sensors 1-4 [LPn bits of Expander are 4-7]
-    if nLPnNbr >= 1 and nLPnNbr <= 4
-        nBit := (nLPnNbr - 1) + 4   ' +4: LPn port bits are 4-7
-        pcf8575.setOutputBitValue(nbit, 1)
-
-PRI disableLPn(nLPnNbr) | nBit
-' LPn bits are numbered 1-4 for our 4 TOF sensors 1-4 [LPn bits of Expander are 4-7]
-    if nLPnNbr >= 1 and nLPnNbr <= 4
-        nBit := (nLPnNbr - 1) + 4   ' +4: LPn port bits are 4-7
-        pcf8575.setOutputBitValue(nbit, 0)
-
-DAT
-    '                 TOF #   1    2    3    4
-    '             I2C Bus #   2    2    1    1
-    TOFdeviceAddrTbl   BYTE    $54, $56, $58, $5A
-
-PRI setTOFAddresses() : ok | nTOFNbr, bDevicePresent, eDvcStatus
-    ok := TRUE
-    repeat nTOFNbr from 1 to 4
-        enableLPn(nTOFNbr)
-        bDevicePresent := tofSensor.startUsingPins()
-        if not bDevicePresent
-            debug("TSK:ERROR missing TOF device, aborting startup")
-            ok := FALSE
-            quit
-        eDvcStatus :=tofSensor.setI2CAddress(BYTE[@TOFdeviceAddrTbl][nTOFNbr - 1])
-        if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-            debug("TSK:ERROR failed to set device i2c addr, aborting startup")
-            ok := FALSE
-            quit
-    disableLPn(nTOFNbr)
-
 PRI handleDriverCommand() | bCanGoIdle, nCommand
     bCanGoIdle := FALSE
     nCommand := LONG[parmPtrCmd]
-    debug("TSK:Handling ", udec(nCommand))
+    debug("TSK: Handling ", udec(nCommand))
     case nCommand
         DC_STOP:
             ' stop our back-end comms
@@ -318,6 +288,93 @@ PRI handleDriverCommand() | bCanGoIdle, nCommand
     if bCanGoIdle
         ' indicate we are done processing command
         ackDriverCommand()
+
+
+DAT
+    '                 TOF #   1    2    3    4
+    '             I2C Bus #   2    2    1    1
+    TOFdeviceAddrTbl   BYTE    $54, $56, $58, $5A
+
+PRI setTOFAddresses() : ok, cntFound | nTOFNbr, bDevicePresent, eDvcStatus, tofIdx
+    ok := TRUE
+    cntFound := 0
+    repeat nTOFNbr from 1 to 4
+        tofIdx := nTOFNbr - 1
+        enableLPn(nTOFNbr)
+        tofSensor[tofIdx].enableDebug(TRUE)
+        bDevicePresent := tofSensor[tofIdx].startUsingPins()
+        if not bDevicePresent
+            debug("TSK: ERROR missing TOF dvc")
+            tofSensor[tofIdx].enableDebug(FALSE)
+            disableLPn(nTOFNbr)
+            ok := FALSE
+            next
+        eDvcStatus :=tofSensor[tofIdx].setI2CAddress(BYTE[@TOFdeviceAddrTbl][nTOFNbr - 1])
+        tofSensor[tofIdx].enableDebug(FALSE)
+        if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+            debug("TSK: ERROR fail set dvc i2c addr")
+            ok := FALSE
+            next
+        else
+            cntFound++
+        disableLPn(nTOFNbr)
+    disableLPn(nTOFNbr)
+
+    if ok <> TRUE
+        debug("TSK: dvc(s) missing!")
+
+PRI resetSensors()
+    ' reset the I2C interface for  a  sensors
+    '  in prep for assigning their I2C addresses
+    setLPnBits()
+    dropRSTBits()
+    waitms(10)
+    setRSTBits()
+    waitms(10)
+    dropRSTBits()
+    dropLPnBits()
+    waitms(10)
+
+PRI setLPnBits() | nBit
+' Clear all 4 LPn bits (disables TOF device COMM.)
+    ' LPn port bits are 4-7
+    repeat nbit from 4 to 7
+        pcf8575.setOutputBitValue(nbit, 1)
+
+PRI dropLPnBits() | nBit
+' Clear all 4 LPn bits (disables TOF device COMM.)
+    ' LPn port bits are 4-7
+    repeat nbit from 4 to 7
+        pcf8575.setOutputBitValue(nbit, 0)
+
+PRI setRSTBits() | nbit
+' Set all 4 LPn bits (disables TOF I2C comms)
+    ' I2C_RST port bits are 12-15
+    repeat nbit from 12 to 15
+        pcf8575.setOutputBitValue(nbit, 1)
+
+PRI dropRSTBits() | nbit
+' Clear all 4 I2C_RST bits (enables TOF device COMM.)
+    ' I2C_RST port bits are 12-15
+    repeat nbit from 12 to 15
+        pcf8575.setOutputBitValue(nbit, 0)
+
+PRI enableLPn(nLPnNbr) | nBit
+' LPn bits are numbered 1-4 for our 4 TOF sensors 1-4 [LPn bits of Expander are 4-7]
+    if nLPnNbr >= 1 and nLPnNbr <= 4
+        nBit := (nLPnNbr - 1) + 4   ' +4: LPn port bits are 4-7
+        pcf8575.setOutputBitValue(nbit, 1)
+
+PRI disableLPn(nLPnNbr) | nBit
+' LPn bits are numbered 1-4 for our 4 TOF sensors 1-4 [LPn bits of Expander are 4-7]
+    if nLPnNbr >= 1 and nLPnNbr <= 4
+        nBit := (nLPnNbr - 1) + 4   ' +4: LPn port bits are 4-7
+        pcf8575.setOutputBitValue(nbit, 0)
+
+PRI clearINTBits() | nWordValue
+' read all bits as input...
+'  value is masked to input bits
+    nWordValue := pcf8575.getInputBits()    ' a read clears pending interrupts
 
 PRI reAddressTOFsensors()
     ' condition all OUTPUT lines to 4 sensors

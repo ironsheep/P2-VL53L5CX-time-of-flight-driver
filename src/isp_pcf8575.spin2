@@ -100,9 +100,9 @@ PUB enableDebug(bEnable)
     '' Turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object)
     bShowDebug := bEnable
     if bShowDebug
-        debug("*PCF: DBG ON")
+        'debug("*PCF: DBG ON")
     else
-        debug("*PCF: DBG off")
+        'debug("*PCF: DBG off")
 
 PUB setPins(pSDA, pSCL, pinINT)
 '' Record PINs for later Deferred Start [startUsingPins()] for use by driver cog
@@ -123,6 +123,9 @@ PUB startUsingPins() : bDevicePresent | pullup, intPin
                 wrpin     pullup, intPin           ' configure PULL-UP for INTb pin
                 dirl      intPin                   ' and set it as input
         end
+
+        'if bShowDebug
+        '    debug("* PCF8575 Started")
 
 PUB start(pinSCL, pinSDA, pinINT) : bDevicePresent | pullup, intPin
 '' Start the device running
@@ -169,17 +172,17 @@ PUB setBitDirection(bitNbr, eDirection) | valBitNbr
         BIT_IS_OUTPUT:
             dirBits |= (1 << valBitNbr)     ' set a bit to make it an output
         other:
-            debug("*PCF: ERROR invalid bit direction")
+            'debug("*PCF: ERROR invalid bit direction")
             abort
 
-    debug("*PCF: dir bits: ", uhex_word(dirBits))
+    'debug("*PCF: dir bits: ", uhex_word(dirBits))
 
 PUB setOutputBitValue(bitNbr, bitValue) | valBitNbr
 '' Set output bit value (0 or 1, bits are 0-15)
     valBitNbr := validBitNumber(bitNbr)
 
     if NOT isOutputBit(valBitNbr)
-        debug("*PCF: ERROR attempt to set bit that is NOT an output")
+        'debug("*PCF: ERROR attempt to set bit that is NOT an output")
         abort
 
     case bitValue
@@ -188,7 +191,7 @@ PUB setOutputBitValue(bitNbr, bitValue) | valBitNbr
         1:
             outBits |= (1 << valBitNbr)
         other:
-            debug("*PCF: ERROR invalid bit direction")
+            'debug("*PCF: ERROR invalid bit direction")
             abort
 
     writeWord(outBits)
@@ -198,13 +201,13 @@ PUB getInputBitValue(bitNbr) : nBitValue | valBitNbr, nWordValue, bStatusOK
     valBitNbr := validBitNumber(bitNbr)
 
     if isOutputBit(valBitNbr)
-        debug("*PCF: ERROR attempt to get value of bit that is NOT an input")
+        'debug("*PCF: ERROR attempt to get value of bit that is NOT an input")
         abort
 
     bStatusOK, nWordValue := readWord()     ' get the value
     if NOT bStatusOK
         nBitValue := 0                      ' error kill all bits
-        debug("*PCF: ERROR reading from device: getInputBitValue()")
+        'debug("*PCF: ERROR reading from dvc: getInputBitValue()")
         abort
 
     nBitValue := (nWordValue >> valBitNbr) & $01 ' isolate the desired bit
@@ -213,11 +216,11 @@ PUB getInputBits() : nWordValue | bStatusOK
 '' Return word that is all bits read from device
 ''  NOTE: Output bits are zero'd
     bStatusOK, nWordValue := readWord()    ' get the value
-    debug("*PCF: DBG reading from device: ", uhex_long(nWordValue))
+    'debug("*PCF: DBG reading from device: ", uhex_long(nWordValue))
     nWordValue &= !dirBits      ' mask off output bits
     if NOT bStatusOK
         nWordValue := READ_ERROR ' error kill all bits
-        debug("*PCF: ERROR reading from device: getInputBits()")
+        'debug("*PCF: ERROR reading from dvc: getInputBits()")
         abort
 
 PUB getInputBitsNTimes(pWordPointer, nWordCount) | bStatusOK, nWordIndex
@@ -227,12 +230,12 @@ PUB getInputBitsNTimes(pWordPointer, nWordCount) | bStatusOK, nWordIndex
     wordfill(pWordPointer, 0, nWordCount)                                    ' prefill w/zeros
 
     bStatusOK := readWords(pWordPointer, nWordCount)    ' get the value
-    debug("*PCF: DBG reading from device: ", UHEX_WORD_ARRAY(pWordPointer, nWordCount))
+    'debug("*PCF: DBG reading from device: ", UHEX_WORD_ARRAY(pWordPointer, nWordCount))
     repeat nWordIndex from 0 to nWordCount - 1
         WORD[pWordPointer][nWordIndex] &= !dirBits      ' mask off output bits
     if NOT bStatusOK
         wordfill(pWordPointer, READ_ERROR, nWordCount)                                    ' prefill w/zeros
-        debug("*PCF: ERROR reading from device: getInputBitsNTimes()")
+        'debug("*PCF: ERROR reading from dvc: getInputBitsNTimes()")
         abort
 
 PUB toggleOutputBit(bitNbr) | valBitNbr, newBitValue
@@ -240,7 +243,7 @@ PUB toggleOutputBit(bitNbr) | valBitNbr, newBitValue
     valBitNbr := validBitNumber(bitNbr)
 
     if NOT isOutputBit(valBitNbr)
-        debug("*PCF: ERROR attempt to toggle bit that is NOT an output")
+        'debug("*PCF: ERROR attempt to toggle bit that is NOT an output")
         abort
 
     newBitValue := ((outBits & (1 << valBitNbr)) <> 0) ? 0 : 1
@@ -275,7 +278,7 @@ PUB readWord() : bStatusOK, result16 | ackbit
     result16 := result16 signx 15   ' sign extend
     'if bShowDebug
     '    term.fstr5(string("*PCF: readWord(0x%.02x) bStatusOK:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr, bStatusOK, result16.byte[1], result16.byte[0], result16)
-    debug(" -rdWd: ", udec(bStatusOK), uhex_word(result16))
+    'debug(" -rdWd: ", udec(bStatusOK), uhex_word(result16))
     bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
 
 PUB writeWord(dataValue16) : bStatusOK | ackbit
@@ -314,9 +317,9 @@ PUB readWords(pWordPointer, nWordCount) : bStatusOK | ackbit, wordIndex, endAckN
     i2c_bus.stop()
     'if bShowDebug
     '    term.fstr3(string(" -- readWords(ct=%d) bStatusOK:%d' 10), nWordCount, bStatusOK)
-    debug("readWords: ", udec_long(nWordCount))
-    repeat wordIndex from 0 to nWordCount - 1
-        debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordPointer][wordIndex]))
+    'debug("readWords: ", udec_long(nWordCount))
+    'repeat wordIndex from 0 to nWordCount - 1
+    '    debug("  #", udec_byte_(wordIndex), " ", uhex_word_(WORD [pWordPointer][wordIndex]))
     bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
 
 CON { --- PRIVATE (Utility) Methods --- }
@@ -352,9 +355,9 @@ PRI idDevice() : eDevice | bFoundAddr0, nAddrFound
     bFoundAddr0 := FALSE
     if(i2c_bus.present((PCF8575_I2C_ADDR_0 << 1 | MODE_WRITE)))
         bFoundAddr0 := true
-        'debug("*PCF: idDevice() found ", uhex(PCF8575_I2C_ADDR_0))
+    '    debug("*PCF: idDevice() found ", uhex(PCF8575_I2C_ADDR_0))
     'else
-        'debug("*PCF: idDevice() NOTHING present()")
+    '    debug("*PCF: idDevice() NOTHING present()")
     i2c_bus.stop()
 
     dvcI2CAddr := DVC_NOT_FOUND
@@ -363,18 +366,17 @@ PRI idDevice() : eDevice | bFoundAddr0, nAddrFound
         dvcI2CAddr := PCF8575_I2C_ADDR_0
         eDevice := DVC_ADDR0
 
-    if bShowDebug
-        if (bFoundAddr0)
-            debug("*PCF: idDevice() found Addr: ", udec(eDevice - 1), uhex(dvcI2CAddr))
-        else
-            debug("*PCF: idDevice() NOT found")
-
+    'if bShowDebug
+    '    if (bFoundAddr0)
+    '        debug("*PCF: idDevice() Addr: ", udec(eDevice - 1), uhex(dvcI2CAddr))
+    '    else
+    '        debug("*PCF: idDevice() NOT found")
     'debug("*PCF: idDevice() EXIT")
 
 PRI validBitNumber(bitNbr) : validBitNbr
     validBitNbr := 0 #> bitNbr <# 15
     if validBitNbr <> bitNbr
-        debug("*PCF: ERROR invalid bit number [0-15]: given ", udec(bitNbr))
+        'debug("*PCF: ERROR invalid bit # [0-15]: given ", udec(bitNbr))
         abort
 
 
