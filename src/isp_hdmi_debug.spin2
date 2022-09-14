@@ -98,8 +98,8 @@ DAT { TASK: DEBUG w/Vars }
     ' driver vars
     textRow         long    0
     logRow          long    0
-    col             long    0
-    row             long    0
+'    col             long    0
+'    row             long    0
     colorFG         long    0
     colorBG         long    0
 
@@ -131,7 +131,7 @@ DAT { TASK: DEBUG w/Vars }
     colors          word    $0800, $0001, $0004, $0006   ' DK0-3
 '                    word    $0f05, $0f02, $0f03, $0f07  ' LT0-3 white text
                     word    $0005, $0002, $0003, $0007  ' LT0-3 black text
-    noColor         word    0
+    noColor         word    $0000   ' black on black
 
 CON
 
@@ -320,7 +320,7 @@ PRI taskShowDebug(pDriverCmd, pDriverArg, pDsplyList)
 '}
             ' place our legend
             placeTextWithDarknessAtRc(28,  0, @"  DK0  ", SCLCLR_DK0)
-            placeTextWithDarknessAtRc(28, 8, @"  DK1  ", SCLCLR_DK1)
+            placeTextWithDarknessAtRc(28,  8, @"  DK1  ", SCLCLR_DK1)
             placeTextWithDarknessAtRc(28, 16, @"  DK2  ", SCLCLR_DK2)
             placeTextWithDarknessAtRc(28, 24, @"  DK3  ", SCLCLR_DK3)
             placeTextWithDarknessAtRc(28, 40, @"  LT0  ", SCLCLR_LT0)
@@ -378,7 +378,10 @@ PRI taskShowDebug(pDriverCmd, pDriverArg, pDsplyList)
                             pGrpValue := LONG[pGrpValuesAr][nGrpOffset + nVarIdx] ' retrieve ptr to variable within this group
                             placeValueOfWidthAtRC(nDisplayRow++, colForGroupIdx(grpIdx + 2) + 10, LONG[pGrpValue], 6)
 
-                waitus(25)  ' slight delay to prevent bad video effects
+                'if cntOfDataSets > 0
+                paintTofSensorWindows()
+
+                'waitus(25)  ' slight delay to prevent bad video effects
 
                 drvrCommand := LONG[pDriverCmd]
 
@@ -413,6 +416,163 @@ PRI handleDriverCommand(pDriverCmd, pDriverArg) : endingCommand | dvrCmd, dvrArg
             LONG[pDriverArg] := 0   ' clear ptr- we used it
         ' reset command to run
         LONG[pDriverCmd] := endingCommand := DC_RUN
+
+VAR
+
+    LONG    tofImageWidth[4]
+    LONG    pTofTgtStatus8[4]
+    LONG    pTofDistanceMM16[4]
+
+    LONG    pTgtStatusBytes
+    LONG    pDistanceMMWords
+    LONG    tgtType
+    LONG    tgtDist
+
+    LONG    tblRow
+    LONG    tblCol
+    LONG    tlbIdx
+    LONG    txtInset
+
+    BYTE    valueLabel[6+1]
+
+DAT
+    cntOfDataSets   LONG    0
+    debugCnt        LONG    1
+    bShowStartup    LONG    TRUE
+    emptyLabel      BYTE    "      ",0
+
+PUB registerTofDataSet(tofIdx, imageWidth, pTgtStatus8, pDistanceMM16) | validIdx
+    if cntOfDataSets == 0
+        longfill(@tofImageWidth, 0, 4)  ' preset to all empty so we can check if data arrived
+        bytefill(@valueLabel, 0, 6)  ' preset to all empty so we have zero terminated string
+
+    validIdx := 0 #> tofIdx <# 4
+    LONG[@tofImageWidth][validIdx] := imageWidth
+    LONG[@pTofTgtStatus8][validIdx] := pTgtStatus8
+    LONG[@pTofDistanceMM16][validIdx] := pDistanceMM16
+    cntOfDataSets++
+
+PRI paintTofSensorWindows() | nTofIdx, rowTL, colTL, imageWidth, cellWidth, cellHeight, nRow, nCol, rmdr, eDarkness, clrFG, clrBG
+{
+    ' show one-time debug if wanted
+    if bShowStartup and cntOfDataSets > 0
+        repeat nTofIdx from 0 to 4 - 1
+                pTgtStatusBytes := LONG[@pTofTgtStatus8][nTofIdx]
+                imageWidth      := LONG[@tofImageWidth][nTofIdx]
+                if pTgtStatusBytes <> 0
+                    debug("HDMI: have data fm #", udec_(nTofIdx+1), udec(imageWidth))
+        ' and that concludes our one time
+        bShowStartup := FALSE
+'}
+    repeat nTofIdx from 0 to 4 - 1
+        ' load up this entry
+        pTgtStatusBytes     := LONG[@pTofTgtStatus8][nTofIdx]
+        imageWidth          := LONG[@tofImageWidth][nTofIdx]
+        pDistanceMMWords    := LONG[@pTofDistanceMM16][nTofIdx]
+        ' do we have data in our table?
+        '  if yes, then show contents...
+        if pTgtStatusBytes <> 0
+{
+            if debugCnt > 0 and BYTE[pTgtStatusBytes][0] <> 0
+                debug("HDMI: TgtStatus, ", udec_byte_array_(pTgtStatusBytes, imageWidth * imageWidth))
+                debug("HDMI: DistanceMM, ", udec_word_array_(pDistanceMMWords, imageWidth * imageWidth))
+                debugCnt--
+'}
+            ' image width can be 4 or 8!
+            if imageWidth <> 0
+                ' have pointers fill in data
+                rowTL := rowForGroupRow(2) + 2
+                colTL := colForSensorIdx(nTofIdx) + 1
+                cellWidth := (imageWidth == 4) ? 6 : 3
+                cellHeight := (imageWidth == 4) ? 2 : 1
+                txtInset := (imageWidth == 4) ? 2 : 0
+                nCol := colTL
+                nRow := rowTL
+                tblCol := imageWidth - 1
+                tblRow := 0
+
+        'for (int y = 0 ; y <= imageWidth * (imageWidth - 1) ; y += imageWidth)
+            'for (int x = imageWidth - 1 ; x >= 0 ; x--)
+
+                ' starting at top-left paint to bottom right
+                repeat imageWidth   ' rows
+                    repeat imageWidth   ' columns within row
+                        tlbIdx := (tblRow * imageWidth) + tblCol
+                        ' now paint cell w/value and BG
+                        ' pTofTgtStatus8[] informs FG/BG color
+                        tgtType := BYTE[pTgtStatusBytes][tlbIdx]
+                        ' pTofDistanceMM16[] informs label value
+                        tgtDist := WORD[pDistanceMMWords][tlbIdx]
+                        ' rescale the value to 3 digits
+                        tgtDist := map(tgtDist, 0,  16_384-1,  0,  99)
+                        'tgtDist := map(tgtDist, 0,  16_384-1,  0,  999)
+                        ' format label
+                        fmtDecimalToLabel(tgtDist, @valueLabel, txtInset)
+                        ' determine colors
+                        '   type and distance make a color
+                        '   distance in three ranges [0-500, 501-832, 833-999]
+                        '   distance in three ranges [0-49, 50-82, 83-99]
+                        case tgtType
+                            5:
+                                if tgtDist > 82
+                                    eDarkness := SCLCLR_LT3
+                                elseif tgtDist > 49
+                                    eDarkness := SCLCLR_LT2
+                                else
+                                    eDarkness := SCLCLR_LT0
+                            13:
+                                if tgtDist > 82
+                                    eDarkness := SCLCLR_DK3
+                                elseif tgtDist > 49
+                                    eDarkness := SCLCLR_DK2
+                                else
+                                    eDarkness := SCLCLR_DK1
+                            255:
+                                eDarkness := noColor
+                            other:
+                                eDarkness := noColor
+                        clrFG, clrBG := fgbgForDarkness(eDarkness)
+                        'place colored label
+                        placeTextWithDarknessAtRc(nRow, nCol, @valueLabel, eDarkness)
+                        if cellHeight == 2
+                            placeTextWithDarknessAtRc(nRow+1, nCol, @emptyLabel, eDarkness)
+                        ' position to next column
+                        nCol += cellWidth
+                        tblCol--
+                    ' end of columns, position to next row
+                    nRow += cellHeight
+                    tblRow++
+                    nCol := colTL
+                    tblCol := imageWidth - 1
+
+PRI fmtDecimalToLabel(labelValue, pLabelBytes, valueInset) | rmdr, bIsLeadingZero
+' format 0-999 into 6 char label + term -or- 3 char label
+    ' if we have wider label, prefill with spaces
+    if valueInset <> 0
+        bytefill(pLabelBytes,$20,6) ' place spaces for 6 char label
+        BYTE[pLabelBytes][6] := 0   ' place terminator for 6-char label
+    else
+        BYTE[pLabelBytes][3] := 0   ' place terminator for 3-char label
+    ' now place our digits
+    bIsLeadingZero := FALSE
+    BYTE[pLabelBytes][valueInset + 0] := (labelValue / 100) + $30
+    if BYTE[pLabelBytes][valueInset + 0] == $30
+        BYTE[pLabelBytes][valueInset + 0] := $20    ' leading spaces
+        bIsLeadingZero := TRUE
+    rmdr := labelValue +// 100
+    BYTE[pLabelBytes][valueInset + 1] := (rmdr / 10) + $30
+    if BYTE[pLabelBytes][valueInset + 1] == $30 and bIsLeadingZero
+        BYTE[pLabelBytes][valueInset + 1] := $20    ' leading spaces
+    rmdr := rmdr +// 10
+    BYTE[pLabelBytes][valueInset + 2] := rmdr + $30
+
+PRI map(inValue,  inMin,  inMax,  outMin,  outMax) : outValue
+    if (inValue <= inMin)
+        outValue := outMin
+    elseif (inValue >= inMax)
+        outValue :=  outMax
+    else
+        outValue := (inValue - inMin) * (outMax - outMin) / (inMax - inMin) + outMin
 
 DAT { workplace - to be removed }
 
@@ -571,21 +731,22 @@ PRI placeMarkedBoxAtRC(nRow, nCol, nWidth, nHeight, bgColor) | bxRow ,bxCol, nCh
                 nChr := LDC_CRNR_TL
             elseif bxRow == nRow and bxCol == nCol+nWidth-1
                 ' place tr corner
+                bUseBGColor := TRUE
+                nChr := LDC_MID_HZ
                 'nChr := LDC_CRNR_TR
             elseif bxRow == nRow+nHeight-1 and bxCol == nCol
                 ' place bl corner
                 nChr := LDC_CRNR_BL
             elseif bxRow == nRow+nHeight-1 and bxCol == nCol+nWidth-1
                 ' place br corner
+                bUseBGColor := TRUE
+                nChr := LDC_MID_HZ
                 'nChr := LDC_CRNR_BR
             elseif bxRow == nRow or bxRow == nRow+nHeight-1
                 ' place horiz edge
-                    bUseBGColor := TRUE
-                if bxRow == nRow+nHeight-1
-                    ' use color background on bottom edge only
-                    nChr := LDC_MID_HZ
-                else
-                    nChr := LDC_MID_HZ
+                ' use color background on top and bottom edges
+                bUseBGColor := TRUE
+                nChr := LDC_MID_HZ
             elseif bxCol == nCol or bxCol == nCol+nWidth-1
                 ' place vert edge (no right edge)
                 if not bxCol == nCol+nWidth-1
@@ -694,7 +855,7 @@ PRI colForSensorIdx(nSensorIdx) : nColumn
     ' groups are displayed:
     '   0   1   2   3
     '   4   5   6   7
-    nColumn := ((nSensorIdx +// 4) * 24) + 1
+    nColumn := ((nSensorIdx +// 4) * 25)
 
 CON { license }
 {{

@@ -41,17 +41,22 @@ CON { basic constants }
     #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_ENABLE_RANGING, DC_STOP, DC_SET_PARM, DC_GET_PARM
     #$E0, RSP_UNKNOWN, RSP_OK, RSP_ERROR
 
-    #$50, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL
+    #$80, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL, ERR_SET_PARAM_FAIL, ERR_GET_PARAM_FAIL
 
     #$10, PID_RANGING_FREQUENCY, PID_RANGING_MODE, PID_RESOLUTION, PID_POWER_MODE
     #$14, PID_INTEGRATION_TIME, PID_SHARPENER_PERCENT, PID_TARGET_ORDER
+
+    VALUE_NOT_SET = (-1)
 
     STACK_SIZE_LONGS = 128  ' was 64
 
 DAT { run-time condition vars }
 
-    bUseHDMI        LONG    TRUE        ' set to TRUE to enable HDMI use/output
-    showHDMIDebug   LONG    FALSE
+    bUseHDMI            LONG    TRUE        ' set to TRUE to enable HDMI use/output
+    showHDMIDebug       LONG    FALSE
+
+    currentResolution   LONG    VALUE_NOT_SET
+    currentImageWidth   LONG    VALUE_NOT_SET
 
 
 OBJ { our sensors }
@@ -114,7 +119,41 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     if not bError
         debug("* Init Complete!")
 
+{
+    drvrArg := PID_RESOLUTION   ' parameter ID
+    nDriverCmd := DC_GET_PARM
+    bError := waitCommandComplete()
+    if not bError
+        debug(" eee drvr says ", udec(drvrArgValue))
+        currentResolution := drvrArgValue
+        currentImageWidth := SQRT currentResolution
+        debug("* resolution is ", udec(currentImageWidth))
+'}
+
+    ' just expect it!
+    currentResolution := tofSensor.VL53L5CX_RESOLUTION_8X8
+    currentImageWidth := SQRT currentResolution
+    ' let's hand off data area pointers to our video subsystem
+    configureVideoDisplays()
+
+{   the correct way
     ' let's set resolution
+    drvrArg := PID_RESOLUTION   ' parameter ID
+    drvrArgValue := tofSensor.VL53L5CX_RESOLUTION_8x8
+    nDriverCmd := DC_SET_PARM
+    bError := waitCommandComplete()
+    if not bError
+        currentResolution := tofSensor.VL53L5CX_RESOLUTION_8x8
+        currentImageWidth := SQRT currentResolution
+        debug("* resolution set!")
+'}
+
+{
+    ' ** but for now we let backend task just force it
+    currentResolution := tofSensor.VL53L5CX_RESOLUTION_8x8
+    currentImageWidth := SQRT currentResolution
+'}
+
 '{
     ' let's start ranging (w/auto unload of data)
     debug("* Start Ranging")
@@ -123,29 +162,16 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     if not bError
         debug("* now Ranging!")
 '}
+
+
     debug("* start up complete!")
     ' tell driver to set-up bus 2
-
-
-
-PRI waitDriverStarted()
-    debug("* waiting for driver started")
-    repeat until nDriverCmd == DC_IDLE
-
-PRI waitCommandComplete() : bError
-    bError := FALSE
-    debug("* waiting for ready")
-    repeat until nDriverCmd <> DC_IDLE
-    repeat until drvrResponse <> RSP_UNKNOWN
-    if drvrResponse <> RSP_OK
-        bError := TRUE
-        debug("  -- EEEE driver reports fault: ", uhex_(drvrArgValue))
 
 PUB stop()
 '' Stop our driver-Cog and all backend objects
     ' shtudown sensing
     nDriverCmd := DC_STOP
-    debug("* waiting for driver shutdown")
+    debug("  -- waiting for driver shutdown")
     repeat until nDriverCmd <> DC_STOP
 
     debug("* is shutdown. Stopping all")
@@ -153,6 +179,20 @@ PUB stop()
     if cog
         cogstop(cog - 1)
         cog := 0
+
+
+PRI waitDriverStarted()
+    debug("  -- waiting for driver started")
+    repeat until nDriverCmd == DC_IDLE
+
+PRI waitCommandComplete() : bError
+    bError := FALSE
+    debug("  -- waiting for ready")
+    repeat until nDriverCmd <> DC_IDLE
+    repeat until drvrResponse <> RSP_UNKNOWN
+    if drvrResponse <> RSP_OK
+        bError := TRUE
+        debug("  -- EEEE driver reports fault: ", uhex_(drvrArgValue))
 
 
 CON ' -------------- COMMAND Interface --------------
@@ -274,9 +314,14 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
     if nbrSensorsFound > 0
         setLPnBits()
 
+    ' TEMP force TOF 1 into 8x8
+    'ok := setTof1Resolution(tofSensor.VL53L5CX_RESOLUTION_8x8)
+
     if not ok and nbrSensorsFound == 0
         debug("TSK: ERROR: not started")
     else
+        ' let's do more setup / prep
+
         ' mark that driver is runnig
         Debug("TSK: Running...")
         LONG[pDriverResponse] := RSP_UNKNOWN
@@ -295,18 +340,66 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
 
             checkAndDoUnloadsPollingTOFs()
 
-            waitms(1000)    ' idle for 1 sec.
+            waitms(250)    ' idle for 1/4 sec.
 
-PRI checkAndDoUnloadsUsingINT()
-    ' process interupt pin values
-    bDataAvail := gatherInterruptInfo()
-    if bDataAvail
-        unloadData()
+PRI setResolution() | eDvcStatus
+
+    eDvcStatus := tofSensor[0].setResolution(tofSensor.VL53L5CX_RESOLUTION_8X8)
+    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+        debug("TSK: ERROR - failed to set resolution to 8x8")
+
+{
+    eDvcStatus := tofSensor[0].setRangingFrequencyHz(2)
+    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+        debug("TSK: ERROR - failed to set FrequencyHz to 2")
+'}
+
+PRI loadSettings() | eDvcStatus, readValue
+
+    eDvcStatus, readValue := tofSensor[0].getRangingFrequencyHz()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        frequencyHz8 := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getRangingMode()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        eRangingMode := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getPowerMode()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        ePowerMode := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getIntegrationTime()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        timeMsec32 := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getSharpenerPercent()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        percent8 := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getTargetOrder()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        targetOrder := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getResolution()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        resolution := readValue
 
 PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSensorRanging, bDataReturned
     ' poll our TOF devices for data ready
     bfoundSomeReady := FALSE
-    ' for each of our TOFs
+     ' for just our 1st TOF
+    ' if sensor has started ranging...
+    bSensorRanging := tofSensor[0].isRanging()
+    if bSensorRanging
+        ' see if data ready...
+        _, bDataReady  := tofSensor[0].isDataReadyToUnload()
+        if bDataReady
+            _, bDataReturned := tofSensor[0].unloadRangingData()
+            if not bDataReturned
+                debug("TSK: error unloading data, TOF #1")
+
+   ' for each of our TOFs
+{
     repeat tofIdx from 0 to 4 - 1
         ' if sensor has started ranging...
         bSensorRanging := tofSensor[tofIdx].isRanging()
@@ -321,13 +414,21 @@ PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSenso
     if bfoundSomeReady
         ' we have at lest one data ready, let's do unloads
         repeat tofIdx from 0 to 4 - 1
-            if BYTE[@bIntPending][tofIdx]
+            if BYTE[@bIntPending][tofIdx] == TRUE
                 _, bDataReturned := tofSensor[tofIdx].unloadRangingData()
                 if not bDataReturned
                     debug("TSK: error unloading data, TOF #", udec_(tofIdx+1))
                 BYTE[@bIntPending][tofIdx] := FALSE
+'}
 
-PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus
+
+PRI setTof1Resolution(newResolution) : ok |   eDvcStatus
+    ok := TRUE
+    eDvcStatus := tofSensor[0].setResolution(newResolution)
+    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+        ok := FALSE
+
+PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK
     bCanGoIdle := FALSE
     debug("TSK: Handling ", udec(newCommand))
     case newCommand
@@ -347,6 +448,15 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
                 rptDriverFault(ERR_INIT_FAIL)
             else
                 bCanGoIdle := TRUE
+
+
+                ' set resolution 8x8
+                setResolution()
+
+                ' set freq 5 hz
+
+                ' read settings for display
+                loadSettings()
 
             {
             repeat tofIdx from 0 to 4 - 1
@@ -381,11 +491,19 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
             '}
         DC_SET_PARM:
             debug("TSK: cmd set param")
-            handleSetupChange()
+            bOK := handleSetupChange()
+            if not bOK
+                rptDriverFault(ERR_SET_PARAM_FAIL)
+            else
+                bCanGoIdle := TRUE
 
         DC_GET_PARM:
             debug("TSK: cmd get param")
-            handleSetupQuery()
+            bOK := handleSetupQuery()
+            if not bOK
+                rptDriverFault(ERR_GET_PARAM_FAIL)
+            else
+                bCanGoIdle := TRUE
 
         other:
             ' nothing to do here
@@ -427,6 +545,14 @@ PRI gatherInterruptInfo() : bfoundSomeReady | nRawInts, nBit, bitMask, tofIdx, B
             ' set new prior
             priorRawInts := nRawInts
 
+{
+PRI checkAndDoUnloadsUsingINT()
+    ' process interupt pin values
+    bDataAvail := gatherInterruptInfo()
+    if bDataAvail
+        unloadData()
+
+
 PRI unloadData() | tofIdx
     repeat  tofIdx from 0 to 4 - 1
         ' if interrupt is pending for this sensor let's unload it
@@ -435,11 +561,22 @@ PRI unloadData() | tofIdx
             tofSensor[tofIdx].unloadRangingData()
             ' reset our pending flag
             BYTE[@bIntPending][tofIdx] := FALSE
+'}
+
+PRI configureVideoDisplays() | tofIdx, pTgtStatus8, pSmplDistanceMM16
+    ' let's hand off data area pointers to our video subsystem
+    'repeat  tofIdx from 0 to 4 - 1
+    'if tofSensor[0].isRanging()
+    tofIdx := 0
+    pTgtStatus8, pSmplDistanceMM16 := tofSensor[tofIdx].targetBufferPointers()
+    debug("* set video #", udec_(tofIdx+1), ", ImgWdth: ", udec_(currentImageWidth))
+    tvDebug.registerTofDataSet(tofIdx, currentImageWidth, pTgtStatus8, pSmplDistanceMM16)
 
 DAT
-    '                 TOF #   1    2    3    4
-    '             I2C Bus #   2    2    1    1
+    '                    TOF #   1    2    3    4
+    '                I2C Bus #   2    2    1    1
     TOFdeviceAddrTbl   BYTE    $54, $56, $58, $5A
+    '            ADDR in LA #  $2A  $2B  $2C  $2D
 
 PRI setTOFAddresses() : ok, cntFound | nTOFNbr, bDevicePresent, eDvcStatus, tofIdx
     ok := TRUE
@@ -530,9 +667,38 @@ PRI reAddressTOFsensors()
     '    ensure TOF now responds at new address
     ' DONE
 
-PRI handleSetupChange()
+PRI handleSetupChange() : ok | parameter, parmValue, tofIdx, eDvcStatus
+    parameter := LONG[parmPtrArg]
+    parmValue := LONG[parmPtrArgValue]
 
-PRI handleSetupQuery()
+    ok := TRUE
+    case parameter
+        PID_RESOLUTION:
+'            repeat tofIdx from 0 to 4 - 1
+'                eDvcStatus := tofSensor[tofIdx].setResolution(parmValue)
+            eDvcStatus := tofSensor[0].setResolution(parmValue)
+            if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                ok := FALSE
+        other:
+            debug("TSK: ERROR (set) unk PID_ enum ", uhex_(parameter))
+
+
+PRI handleSetupQuery() : ok | parameter, parmValue, tofIdx, eDvcStatus
+    parameter := LONG[parmPtrArg]
+
+    ok := TRUE
+    case parameter
+        PID_RESOLUTION:
+'            repeat tofIdx from 0 to 4 - 1
+'                eDvcStatus := tofSensor[tofIdx].setResolution(parmValue)
+            eDvcStatus, parmValue := tofSensor[0].getResolution()
+            debug("TSK:   (DBG) ", udec(eDvcStatus), udec(parmValue))
+            if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                ok := FALSE
+            else
+                LONG[parmPtrArgValue] := parmValue
+        other:
+            debug("TSK: ERROR (get) unk PID_ enum ", uhex_(parameter))
 
 DAT { TASK Data }
 
@@ -548,7 +714,7 @@ CON { --- HDMI Debug Support --- }
 
 CON { Constants for HDMI Debug }
 
-    DBG_GROUPS_CT = 3
+    DBG_GROUPS_CT = 1
     DBG_MAX_VARS_IN_GROUP = 7
 
 VAR { * Data Structure for HDMI Debug * }
@@ -558,46 +724,27 @@ VAR { * Data Structure for HDMI Debug * }
     LONG    pNamesAr[DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP]
     LONG    pValsAr[DBG_GROUPS_CT*DBG_MAX_VARS_IN_GROUP]
 
+
+
 DAT { Literals for HDMI Debug }
 
-' acelerometer data
-    nameTitle1  BYTE    "Accel",0
-    name10      BYTE    "rawX",0
-    name11      BYTE    "rawY",0
-    name12      BYTE    "rawZ",0
-    name13      BYTE    "X",0
-    name14      BYTE    "Y",0
-    name15      BYTE    "Z",0
+' TOF setup data
+    nameTitle1  BYTE    "TOF Settings",0
+    name10      BYTE    "Frq Hz",0
+    name11      BYTE    "Rng Mode",0
+    name12      BYTE    "Pwr Mode",0
+    name13      BYTE    "Time mS",0
+    name14      BYTE    "Shrpr %",0
+    name15      BYTE    "Tgt Ordr",0
+    name16      BYTE    "Resol",0
 nextAddr1
     dataLen1     LONG    @nextAddr1 - @nameTitle1
-
-' magnetometer data
-    nameTitle2  BYTE    "Mag",0
-    name20      BYTE    "rawX",0
-    name21      BYTE    "rawY",0
-    name22      BYTE    "rawZ",0
-    name23      BYTE    "X",0
-    name24      BYTE    "Y",0
-    name25      BYTE    "Z",0
-nextAddr2
-    dataLen2     LONG    @nextAddr2 - @nameTitle2
-
-' gyroscope data
-    nameTitle3  BYTE    "Gyro",0
-    name30      BYTE    "rawX",0
-    name31      BYTE    "rawY",0
-    name32      BYTE    "rawZ",0
-    name33      BYTE    "X",0
-    name34      BYTE    "Y",0
-    name35      BYTE    "Z",0
-nextAddr3
-    dataLen3     LONG    @nextAddr3 - @nameTitle3
 
 
 PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
 ' do internal one-time setup of driver debug data
     nGrpOffset := 0
-    nVarsInGroup := 6
+    nVarsInGroup := 7
     LONG[@pTitlesAr][nGrpOffset] := @nameTitle1
     LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
     ' populate the empty name/value ptr tables
@@ -608,58 +755,21 @@ PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
     LONG[@pNamesAr][nValsGrpOffset + 3] := @name13
     LONG[@pNamesAr][nValsGrpOffset + 4] := @name14
     LONG[@pNamesAr][nValsGrpOffset + 5] := @name15
-    LONG[@pValsAr][nValsGrpOffset + 0] := @rawAccelX
-    LONG[@pValsAr][nValsGrpOffset + 1] := @rawAccelY
-    LONG[@pValsAr][nValsGrpOffset + 2] := @rawAccelZ
-    LONG[@pValsAr][nValsGrpOffset + 3] := @accelX
-    LONG[@pValsAr][nValsGrpOffset + 4] := @accelY
-    LONG[@pValsAr][nValsGrpOffset + 5] := @accelZ
+    LONG[@pNamesAr][nValsGrpOffset + 6] := @name16
+    LONG[@pValsAr][nValsGrpOffset + 0] := @frequencyHz8
+    LONG[@pValsAr][nValsGrpOffset + 1] := @eRangingMode
+    LONG[@pValsAr][nValsGrpOffset + 2] := @ePowerMode
+    LONG[@pValsAr][nValsGrpOffset + 3] := @timeMsec32
+    LONG[@pValsAr][nValsGrpOffset + 4] := @percent8
+    LONG[@pValsAr][nValsGrpOffset + 5] := @targetOrder
+    LONG[@pValsAr][nValsGrpOffset + 6] := @resolution
 
     ' reset unused
     unused0 := 0
     unused1 := 0
 
-    nGrpOffset := 1
-    nVarsInGroup := 6
-    LONG[@pTitlesAr][nGrpOffset] := @nameTitle2
-    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
-     ' populate the empty name/value ptr tables
-    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
-    LONG[@pNamesAr][nValsGrpOffset + 0] := @name20
-    LONG[@pNamesAr][nValsGrpOffset + 1] := @name21
-    LONG[@pNamesAr][nValsGrpOffset + 2] := @name22
-    LONG[@pNamesAr][nValsGrpOffset + 3] := @name23
-    LONG[@pNamesAr][nValsGrpOffset + 4] := @name24
-    LONG[@pNamesAr][nValsGrpOffset + 5] := @name25
-    LONG[@pValsAr][nValsGrpOffset + 0] := @rawMagX
-    LONG[@pValsAr][nValsGrpOffset + 1] := @rawMagY
-    LONG[@pValsAr][nValsGrpOffset + 2] := @rawMagZ
-    LONG[@pValsAr][nValsGrpOffset + 3] := @magX
-    LONG[@pValsAr][nValsGrpOffset + 4] := @magY
-    LONG[@pValsAr][nValsGrpOffset + 5] := @magZ
-
-    nGrpOffset := 2
-    nVarsInGroup := 6
-    LONG[@pTitlesAr][nGrpOffset] := @nameTitle3
-    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
-     ' populate the empty name/value ptr tables
-    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP ' mult by vars in prior group
-    LONG[@pNamesAr][nValsGrpOffset + 0] := @name30
-    LONG[@pNamesAr][nValsGrpOffset + 1] := @name31
-    LONG[@pNamesAr][nValsGrpOffset + 2] := @name32
-    LONG[@pNamesAr][nValsGrpOffset + 3] := @name33
-    LONG[@pNamesAr][nValsGrpOffset + 4] := @name34
-    LONG[@pNamesAr][nValsGrpOffset + 5] := @name35
-    LONG[@pValsAr][nValsGrpOffset + 0] := @rawGyroX
-    LONG[@pValsAr][nValsGrpOffset + 1] := @rawGyroY
-    LONG[@pValsAr][nValsGrpOffset + 2] := @rawGyroZ
-    LONG[@pValsAr][nValsGrpOffset + 3] := @gyroX
-    LONG[@pValsAr][nValsGrpOffset + 4] := @gyroY
-    LONG[@pValsAr][nValsGrpOffset + 5] := @gyroZ
-
-
     ' tell our table size to reader
-    nGrpOffset := 3
+    nGrpOffset := 1
     LONG[@pTitlesAr][nGrpOffset] := DBG_MAX_VARS_IN_GROUP
 
 PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars | tmpAbsPtr
@@ -673,37 +783,16 @@ PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVar
 
 VAR { captured sensor data }
 
-    long rawMagX
-    long rawMagY
-    long rawMagZ
-    long magX
-    long magY
-    long magZ
+    LONG    frequencyHz8
+    LONG    eRangingMode
+    LONG    ePowerMode
+    LONG    timeMsec32
+    LONG    percent8
+    LONG    targetOrder
+    LONG    resolution
 
-    long rawAccelX
-    long rawAccelY
-    long rawAccelZ
-    long accelX
-    long accelY
-    long accelZ
-
-    long rawGyroX
-    long rawGyroY
-    long rawGyroZ
-    long gyroX
-    long gyroY
-    long gyroZ
-
-    long roll
-    long pitch
-    long yaw
-    long unused0
-    long unused1
-    long senseTimeMS
-
-    long ticks1ms
-    long ticks1us
-    long ticks125ms
+    LONG    unused0
+    LONG    unused1
 
 CON { license }
 

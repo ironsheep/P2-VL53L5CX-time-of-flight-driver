@@ -169,7 +169,7 @@ PUB startUsingPins() : bDevicePresent | eDvcStatus, bIsAlive
 ' SPECIAL for use when in multi-sensor config
 
     if bPinsSetUp
-        debug("VL53: #", udec_(instanceID), " startUsingPins() ID dvc address...")
+        debugWithInstanceID(@" startUsingPins() ID dvc address...")
         i2c_bus.setup(pin_scl, pin_sda, FREQ_IN_KHZ_VL53L5CX_I2C, PULL_UP_VL53L5CX_I2C)
         bDevicePresent := bDeviceFound := (idDevice() <> DVC_NOT_FOUND)
         if bDeviceFound
@@ -195,7 +195,7 @@ PUB activateSensor() : bDevicePresent | eDvcStatus
         ' return VL53L5CX_STATUS_OK
         eDvcStatus := vl53l5cxInit()
         if eDvcStatus <> VL53L5CX_STATUS_OK
-            debug("VL53: #", udec_(instanceID), " Init Failed")
+            debugWithInstanceID(@" Init Failed")
             bDevicePresent := FALSE
 
 
@@ -309,7 +309,7 @@ PUB isAlive() : eDvcStatus, bIsAlive | device_id, revision_id, bStatusNotOK, bTe
     else
         if ((device_id == $F0) and (revision_id == $02))
             bIsAlive := TRUE
-            debug("VL53 #", udec_(instanceID), " is alive!")
+            debugWithInstanceID(@" is alive!")
         else
             debug("VL53: chip detect: BAD ID from chip!")
 
@@ -521,7 +521,6 @@ PUB getResolution() : eDvcStatus, eResolution | bStatusNotOK
 '' Alternatively returns {eDvcStatus}:
 ''  VL53L5CX_STATUS_BAD_DATA if an unexpected value was read from the sensor
 ''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
-    debug("VL53: Get Resolution")
     eDvcStatus := VL53L5CX_STATUS_OK
 
     ' status |= vl53l5cx_dci_read_data(p_dev, p_dev->temp_buffer, VL53L5CX_DCI_ZONE_CONFIG, 8)
@@ -535,6 +534,14 @@ PUB getResolution() : eDvcStatus, eResolution | bStatusNotOK
 
     if bStatusNotOK and eDvcStatus == VL53L5CX_STATUS_OK
         eDvcStatus := VL53L5CX_STATUS_ERROR
+
+    if eDvcStatus == VL53L5CX_STATUS_OK
+        debug("VL53 #", udec_(instanceID), " Get Resolution = ", udec(eResolution))
+    else
+        debugWithInstanceID(@" Get Resolution FAIL")
+
+PRI debugWithInstanceID(pMessage)
+    debug("VL53 #", udec_(instanceID), zstr_(pMessage))
 
 PUB setPowerMode(ePowerMode) : eDvcStatus | bStatusNotOK, bTempStatusNotOK, eCurrPowerMode
 '' Set the sensors' power-mode to [VL53L5CX_POWER_MODE_SLEEP, or VL53L5CX_POWER_MODE_WAKEUP]
@@ -722,7 +729,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
 ''  Returns VL53L5CX_STATUS_OK if the start ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    debug("VL53 #", udec_(instanceID), " Start Ranging")
+    debugWithInstanceID(@" Start Ranging")
 
         'init output enables
     long[@output_bh_enable][0] := $00000007  ' Enable mandatory output (meta and common data)
@@ -884,7 +891,7 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
         repeat
             bTempStatusNotOK, tmp := readByte(VL53L5CX_REG_GO2_STATUS0)                     ' status |= RdByte(&(p_dev->platform), 0x6, &tmp)
             bStatusNotOK |= bTempStatusNotOK
-            WaitMs(10)
+            waitms(10)
             timeout++
             ' Timeout reached after 5 seconds
             if timeout > 500
@@ -977,7 +984,7 @@ PUB unloadRangingData() : eDvcStatus, bDataReturned | bStatusNotOK, bfrByteIdx, 
 '' Retrieve ranging data from the sensor. Return T/F (where T means data was retrieved) when {eDvcStatus} is VL53L5CX_STATUS_OK
 '' Alternatively returns {eDvcStatus}:
 ''  VL53L5CX_STATUS_ERROR if there was an i2c i/o error
-    debug("VL53: Unload Ranging Data")
+    'debugWithInstanceID(@" Unload Ranging Data")
 
     eDvcStatus := VL53L5CX_STATUS_OK
     'union Block_header *bh_ptr
@@ -1220,6 +1227,12 @@ PRI reportEmptyLongArray(pLongs, nCount, pArrayId) | result, idx
 PRI reportFindings(result, pArrayId) | pStatus
     pStatus := (result <> 0) ? @"has Data" : @"{is empty}"
     debug("VL53: ", zstr_(pArrayId), " ", zstr_(pStatus))
+
+PUB targetBufferPointers() : pTgtStatus8, pDistanceMM16
+'' Return pointers to internal data arrays
+''  that is: @DistanceMM[0] (WORD[]) and @TargetStatus[0] (BYTE[])
+    pTgtStatus8 := @rsltTargetStatus8
+    pDistanceMM16 := @rsltDistanceMM16
 
 PUB sampleDistanceMM(index) : nValue16 | validIndex
 '' Return DistanceMM[{index}] value
@@ -1845,7 +1858,7 @@ PRI pollForAnswer(size8, posn8, addr16, mask8, expected8) : eDvcStatus | timeout
         timeout++
 
         ' status |= WaitMs(&(p_dev->platform), 10) (was ABOVE moved to here)
-        waitMS(10)
+        waitms(10)
 
     if bStatusNotOK
         eDvcStatus := VL53L5CX_STATUS_ERROR
