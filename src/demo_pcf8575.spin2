@@ -112,7 +112,7 @@ PUB main() : ok | statusOK, bHaveINT, testWord, deviceFound
         toggleBit(OUTBIT_P1_4_BIT12)
         toggleBit(OUTBIT_P1_4_BIT12)
 
-        bHaveINT := \pcf8575.getIntPinState()
+        bHaveINT := \pcf8575.isIntPending()
         debug(" * check INT ", sdec(bHaveINT))
 
         'testWord := \pcf8575.getInputBits()

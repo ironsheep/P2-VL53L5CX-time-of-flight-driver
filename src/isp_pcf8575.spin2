@@ -91,7 +91,7 @@ CON { device/driver constants }
 
     PCF8575_I2C_ADDR_0      = $20
 
-    INT_PULL_UP             = i2c_bus.PU_15K
+    INT_PULL_UP             = i2c_bus.PU_3K3
 
 PUB null()
 '' This is not a top-level object
@@ -256,12 +256,12 @@ PUB isOutputBit(bitNbr) : bIsOutput | valBitNbr
 
 CON  { ---- Device reads & writes ---- }
 
-PUB getIntPinState() : bPinState | rawPin
+PUB isIntPending() : bPinState | rawPin
     '' Return interpreted value of Interrupt pin where 1 = TRUE, 0 = FALSE
     rawPin := pinr(pin_int)
-    bPinState := (rawPin == 0) ? false : true
+    bPinState := (rawPin == 0) ? TRUE : FALSE
     'if bShowDebug
-        'debug(`8575log ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
+        'debug(`8575log ' * isIntPending() PinRaw=`(rawPin), state=`(bPinState)' 10)
 
 
 PUB readWord() : bStatusOK, result16 | ackbit

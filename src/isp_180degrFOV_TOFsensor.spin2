@@ -38,8 +38,10 @@ CON { basic constants }
     TEST_WORD_CT = 4
 
     ' internal driver commands
-    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_CFG_BUS1, DC_CFG_BUS2, DC_RUN, DC_STOP, DC_SET_PARM, DC_GET_PARM
+    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_ENABLE_RANGING, DC_STOP, DC_SET_PARM, DC_GET_PARM
     #$E0, RSP_UNKNOWN, RSP_OK, RSP_ERROR
+
+    #$50, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL
 
     #$10, PID_RANGING_FREQUENCY, PID_RANGING_MODE, PID_RESOLUTION, PID_POWER_MODE
     #$14, PID_INTEGRATION_TIME, PID_SHARPENER_PERCENT, PID_TARGET_ORDER
@@ -88,7 +90,7 @@ PUB setExpanderPins(pSDA, pSCL, pinINT)
 '' this listens to and controls all 4 TOF sensors
     pcf8575.setPins(pSDA, pSCL, pinINT)
 
-PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt
+PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt, bError
 '' Start all backend objects and our Overall driver Cog
     if bUseHDMI
         tvDebug.start(pinHDMIbase, @screenTitle)
@@ -102,20 +104,42 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     ok := cog := cogspin(NEWCOG, taskRun180FovSensor(@nDriverCmd, @nDriverArg, @drvrArgValue, @drvrResponse), @taskStack) + 1
 
     'wait driver running
-    debug("* waiting for driver started")
-    repeat until nDriverCmd <> DC_IDLE
+    waitDriverStarted()
 
     ' tell driver to set-up bus 1
-    debug("* Starting BUS 1 of 2")
-    nDriverCmd := DC_CFG_BUS1
+    debug("* Loading Sensors")
+    nDriverCmd := DC_START
 
-    debug("* waiting for BUS 1 ready")
-    repeat until drvrResponse <> RSP_UNKNOWN
-    if drvrResponse == RSP_ERROR
-        debug("* waiting BUS 1 ready")
+    bError := waitCommandComplete()
+    if not bError
+        debug("* Init Complete!")
 
-
+    ' let's set resolution
+'{
+    ' let's start ranging (w/auto unload of data)
+    debug("* Start Ranging")
+    nDriverCmd := DC_ENABLE_RANGING
+    bError := waitCommandComplete()
+    if not bError
+        debug("* now Ranging!")
+'}
+    debug("* start up complete!")
     ' tell driver to set-up bus 2
+
+
+
+PRI waitDriverStarted()
+    debug("* waiting for driver started")
+    repeat until nDriverCmd == DC_IDLE
+
+PRI waitCommandComplete() : bError
+    bError := FALSE
+    debug("* waiting for ready")
+    repeat until nDriverCmd <> DC_IDLE
+    repeat until drvrResponse <> RSP_UNKNOWN
+    if drvrResponse <> RSP_OK
+        bError := TRUE
+        debug("  -- EEEE driver reports fault: ", uhex_(drvrArgValue))
 
 PUB stop()
 '' Stop our driver-Cog and all backend objects
@@ -204,7 +228,14 @@ DAT { debug display data }
     drvrArgValue    long    0
     taskStack       long    0[STACK_SIZE_LONGS]
 
-    bDevicePreset   long    FALSE
+    priorRawInts    long    0
+
+    bDevicePreset   byte    FALSE
+    bDataAvail      byte    FALSE
+
+    bIntPending     byte    FALSE[4]
+
+
 
 PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse) | nbit, ok, nbrSensorsFound
     'repeat  ' stop here !!!
@@ -255,30 +286,105 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
             drvrCommand := LONG[pDriverCmd]
             drvrArg := LONG[pDriverArg]
 
-            if drvrCommand <> DC_RUN and drvrCommand <> DC_IDLE
-                handleDriverCommand()
+            if drvrCommand <> DC_IDLE and drvrCommand <> DC_UNKNOWN
+                LONG[pDriverCmd] := DC_UNKNOWN          ' while we dispatch
+                LONG[pDriverResponse] := RSP_UNKNOWN
+
+                if drvrCommand <> DC_IDLE and drvrCommand <> DC_UNKNOWN
+                    handleDriverCommand(drvrCommand)
+
+            checkAndDoUnloadsPollingTOFs()
 
             waitms(1000)    ' idle for 1 sec.
 
-PRI handleDriverCommand() | bCanGoIdle, nCommand
+PRI checkAndDoUnloadsUsingINT()
+    ' process interupt pin values
+    bDataAvail := gatherInterruptInfo()
+    if bDataAvail
+        unloadData()
+
+PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSensorRanging, bDataReturned
+    ' poll our TOF devices for data ready
+    bfoundSomeReady := FALSE
+    ' for each of our TOFs
+    repeat tofIdx from 0 to 4 - 1
+        ' if sensor has started ranging...
+        bSensorRanging := tofSensor[tofIdx].isRanging()
+        if bSensorRanging
+            ' see if data ready...
+            _, bDataReady  := tofSensor[tofIdx].isDataReadyToUnload()
+            ' mark interrupt occurred flag if ready, else clear it
+            BYTE[@bIntPending][tofIdx] := (bDataReady) ? TRUE : FALSE
+            if BYTE[@bIntPending][tofIdx]
+                bfoundSomeReady := TRUE
+
+    if bfoundSomeReady
+        ' we have at lest one data ready, let's do unloads
+        repeat tofIdx from 0 to 4 - 1
+            if BYTE[@bIntPending][tofIdx]
+                _, bDataReturned := tofSensor[tofIdx].unloadRangingData()
+                if not bDataReturned
+                    debug("TSK: error unloading data, TOF #", udec_(tofIdx+1))
+                BYTE[@bIntPending][tofIdx] := FALSE
+
+PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus
     bCanGoIdle := FALSE
-    nCommand := LONG[parmPtrCmd]
-    debug("TSK: Handling ", udec(nCommand))
-    case nCommand
+    debug("TSK: Handling ", udec(newCommand))
+    case newCommand
         DC_STOP:
+            debug("TSK: cmd stop")
             ' stop our back-end comms
-            tofSensor[0].stop()
-            tofSensor[1].stop()
-            tofSensor[2].stop()
-            tofSensor[3].stop()
+            repeat tofIdx from 0 to 4 - 1
+                tofSensor[tofIdx].stop()
             pcf8575.stop()
             tvDebug.stop()
             bCanGoIdle := TRUE
         DC_START:
+            debug("TSK: cmd start")
+            ' init just TOF #1
+            bDvcPresent := tofSensor[0].activateSensor()
+            if not bDvcPresent
+                rptDriverFault(ERR_INIT_FAIL)
+            else
+                bCanGoIdle := TRUE
 
+            {
+            repeat tofIdx from 0 to 4 - 1
+                bDvcPresent := tofSensor[tofIdx].activateSensor()
+                if not bDvcPresent
+                    rptDriverFault(ERR_INIT_FAIL)
+                    quit
+                elseif tofIdx == 4 - 1
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+            '}
+        DC_ENABLE_RANGING:
+            debug("TSK: cmd enbl ranging")
+            ' start just TOF #1
+            eDvcStatus := tofSensor[0].startRanging()
+            if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                rptDriverFault(ERR_DVC_CMD_FAIL)
+            else
+                bCanGoIdle := TRUE
+            ' for the moment just turn on TOF1
+            {
+            repeat tofIdx from 0 to 4 - 1
+                eDvcStatus := tofSensor[tofIdx].startRanging()
+                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                    rptDriverFault(ERR_DVC_CMD_FAIL)
+                    quit
+                elseif tofIdx == 4 - 1
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+            '}
         DC_SET_PARM:
+            debug("TSK: cmd set param")
             handleSetupChange()
+
         DC_GET_PARM:
+            debug("TSK: cmd get param")
             handleSetupQuery()
 
         other:
@@ -289,6 +395,46 @@ PRI handleDriverCommand() | bCanGoIdle, nCommand
         ' indicate we are done processing command
         ackDriverCommand()
 
+PRI ackDriverCommand()
+    ' indicate we are done processing command
+    long[parmPtrResponse] := RSP_OK
+    long[parmPtrCmd] := DC_IDLE
+
+PRI rptDriverFault(faultValue)
+    ' indicate we ended with fault and set identifying value
+    long[parmPtrResponse] := RSP_ERROR
+    long[parmPtrArgValue] := faultValue
+    long[parmPtrCmd] := DC_IDLE
+
+PRI gatherInterruptInfo() : bfoundSomeReady | nRawInts, nBit, bitMask, tofIdx, BYTE newBit, BYTE oldBit
+' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
+'  our TOF sensor transition high-to-low is what we are looking for..
+'   we need to ignore the low-to-high changes
+    bfoundSomeReady := FALSE
+    if pcf8575.isIntPending()
+        nRawInts := pcf8575.getInputBits()    ' a read clears pending interrupts
+        if priorRawInts <> nRawInts
+            ' INTb bits for our 4 TOF sensors 1-4 [LPn bits of Expander are 8-11]
+            repeat nBit from 8 to 11
+                tofIdx := nBit - 8   ' now [0-3]
+                bitMask := 1 << nbit
+                oldBit :=  priorRawInts & bitMask
+                newBit :=  nRawInts & bitMask
+                ' if the bit changed and it's high to low
+                BYTE[@bIntPending][tofIdx] := (newBit <> oldBit and newBit == 0) ? TRUE : FALSE
+                if BYTE[@bIntPending][tofIdx]
+                    bfoundSomeReady := TRUE
+            ' set new prior
+            priorRawInts := nRawInts
+
+PRI unloadData() | tofIdx
+    repeat  tofIdx from 0 to 4 - 1
+        ' if interrupt is pending for this sensor let's unload it
+        if BYTE[@bIntPending][tofIdx]
+            ' YES unload data
+            tofSensor[tofIdx].unloadRangingData()
+            ' reset our pending flag
+            BYTE[@bIntPending][tofIdx] := FALSE
 
 DAT
     '                 TOF #   1    2    3    4
@@ -301,16 +447,16 @@ PRI setTOFAddresses() : ok, cntFound | nTOFNbr, bDevicePresent, eDvcStatus, tofI
     repeat nTOFNbr from 1 to 4
         tofIdx := nTOFNbr - 1
         enableLPn(nTOFNbr)
-        tofSensor[tofIdx].enableDebug(TRUE)
+        'tofSensor[tofIdx].enableDebug(TRUE)
         bDevicePresent := tofSensor[tofIdx].startUsingPins()
         if not bDevicePresent
             debug("TSK: ERROR missing TOF dvc")
-            tofSensor[tofIdx].enableDebug(FALSE)
+            'tofSensor[tofIdx].enableDebug(FALSE)
             disableLPn(nTOFNbr)
             ok := FALSE
             next
         eDvcStatus :=tofSensor[tofIdx].setI2CAddress(BYTE[@TOFdeviceAddrTbl][nTOFNbr - 1])
-        tofSensor[tofIdx].enableDebug(FALSE)
+        'tofSensor[tofIdx].enableDebug(FALSE)
         if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
             debug("TSK: ERROR fail set dvc i2c addr")
             ok := FALSE
@@ -387,10 +533,6 @@ PRI reAddressTOFsensors()
 PRI handleSetupChange()
 
 PRI handleSetupQuery()
-
-PRI ackDriverCommand()
-        ' indicate we are done processing command
-        long[parmPtrCmd] := DC_IDLE
 
 DAT { TASK Data }
 

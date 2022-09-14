@@ -179,6 +179,26 @@ PUB startUsingPins() : bDevicePresent | eDvcStatus, bIsAlive
             else
                 bDevicePresent := FALSE
 
+PUB activateSensor() : bDevicePresent | eDvcStatus
+'' Deferred Start for use by driver cog
+''  MUST be preceede by setPins() and startUsingPins()
+' SPECIAL for use when in multi-sensor config
+    bDevicePresent := FALSE
+    if bPinsSetUp
+        bDevicePresent := TRUE
+        ' turn off: vl53l5cx_off()
+        ' turn on: vl53l5cx_on()
+        initDriver()    ' extended so we can do run-time config of driver
+
+        ' init device: vl53l5cx_init()
+        '   return VL53L5CX_STATUS_ERROR if failed to init
+        ' return VL53L5CX_STATUS_OK
+        eDvcStatus := vl53l5cxInit()
+        if eDvcStatus <> VL53L5CX_STATUS_OK
+            debug("VL53: #", udec_(instanceID), " Init Failed")
+            bDevicePresent := FALSE
+
+
 PUB start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | eDvcStatus, bIsAlive
 '' Start the device running
 
@@ -312,6 +332,10 @@ PUB setI2CAddress(i2cAddress) : eDvcStatus | bStatusNotOK
     if eDvcStatus == VL53L5CX_STATUS_OK
         waitus(5)   ' put gap in LA display
         idDevice()
+        if dvcI2CAddr == DVC_NOT_FOUND
+            eDvcStatus := VL53L5CX_STATUS_ERROR
+        else
+            debug("VL53 #", udec_(instanceID), " addr: ", uhex_(dvcI2CAddr))
 
 PUB getI2CAddress() : nDvcI2CAddr
 '' Return the current i2c device address (or DVC_NOT_FOUND if no device found on i2c bus)
@@ -698,7 +722,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
 ''  Returns VL53L5CX_STATUS_OK if the start ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    debug("VL53: Start Ranging")
+    debug("VL53 #", udec_(instanceID), " Start Ranging")
 
         'init output enables
     long[@output_bh_enable][0] := $00000007  ' Enable mandatory output (meta and common data)
@@ -749,8 +773,8 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     LONG[@output][10] := targetStatusBh
     LONG[@output][11] := motionDetectBh
 
-    debug("VL53: output_bh_enable[] = ", uhex_long_array_(@output_bh_enable, 4))
-    debug("VL53: output[] = ", uhex_long_array_(@output, 12))
+    'debug("VL53: output_bh_enable[] = ", uhex_long_array_(@output_bh_enable, 4))
+    'debug("VL53: output[] = ", uhex_long_array_(@output, 12))
 
     eDvcStatus, nResolution8 := getResolution()     ' status |= vl53l5cx_get_resolution(p_dev, &resolution)
     streamcount := 255                              ' p_dev->streamcount := 255 Used by vl53l5cx_check_data_ready()
@@ -782,7 +806,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
         dataReadSize += 4
         'debug("  --  sz ", udec(dataReadSize))
     dataReadSize += 20
-    debug("VL53 range sz ", udec(dataReadSize))
+    debug("VL53 #", udec_(instanceID), " range sz ", udec(dataReadSize))
 
     'status |= vl53l5cx_dci_write_data(p_dev, (uint8_t *)&(output), VL53L5CX_DCI_OUTPUT_LIST, (uint16_t)sizeof(output))
     bStatusNotOK := dciWriteData(@output, VL53L5CX_DCI_OUTPUT_LIST, output_len)
@@ -823,7 +847,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
     if readSize <> dataReadSize
     ' FIXME: these read back the same but compare badly!!! WHY!!!
         ' DEBUG says they are the same value!!!!
-        debug("VL53: readback check fail ", udec(readSize), "/", uhex_(readSize), " vs. ", udec(dataReadSize), "/", uhex_(dataReadSize))
+        debug("VL53 #", udec_(instanceID), " readback check fail ", udec(readSize), "/", uhex_(readSize), " vs. ", udec(dataReadSize), "/", uhex_(dataReadSize))
         'eDvcStatus |= VL53L5CX_STATUS_ERROR
 
     if bStatusNotOK
@@ -832,9 +856,9 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
         bSensorActive := TRUE
 
     if eDvcStatus == VL53L5CX_STATUS_OK
-        debug("  - Ranging Started")
+        debug("  - #", udec_(instanceID), " Ranging Started")
     else
-        debug("  - ERROR Ranging Didn't Start")
+        debug("  - #", udec_(instanceID), " ERROR Ranging Didn't Start")
 
 PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK, bStatusNotOK
 '' Stops the ranging session. It must be used when the sensor is streaming, after calling startRanging().
@@ -898,7 +922,7 @@ PUB didInterrupt() : bPinState | rawPin
     rawPin := pinr(pin_int)
     bPinState := (rawPin == 0) ? false : true
     'if bShowDebug
-        'debug(`snsLog ' * getIntPinState() PinRaw=`(rawPin), state=`(bPinState)' 10)
+        'debug(`snsLog ' * isIntPending() PinRaw=`(rawPin), state=`(bPinState)' 10)
 
 CON ' --- PUBLIC Routines accessing TOF Ranging Data ---
 
