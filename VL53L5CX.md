@@ -34,11 +34,14 @@ This sensor is available in a number of forms from a number of sources:
 
 On this Page:
 
-- [The Object]()
-- [Use in your own Project]()
+- [The vl53l5cx Object](#the-vl53l5cx-object-spin2)
+- [Use the vl53l5cx object in your own Project]()
 
 Additional pages:
 
+- [VL53L5CX part](./DOCs/vl53l5cx.pdf) datasheet
+- [VL53L5CX Satel board](./DOCs/vl53l5cx-satel.pdf) datasheet
+- [VL53L5CX driver](./DOCs/um2884-use-vl53l5cx-with-ultra-lite-driver-sw.pdf) windows driver notes but mostly useful with this driver/object too
 - [GOAL - TOF Sensor: w/180° Field of View](./DOCs/Designs/README.md) - how I make this wide field-of-view sensor?
 - [PCF8575 Object Documentation](./PCF8575.md) - this is used to select between multiple TOF sensors
 
@@ -146,22 +149,29 @@ This driver has its own top-level demo. The files involved are:
 
 As written the demo assigned the following pins to communicate with the board. 
 
-| P2 PIN | Board Connector | Purpose | Direction
+| P2 PIN | Satel Board Connector | Purpose | Direction
 | --- | ---| ---| ---|
-| 26 | SDA | data| In/Out
-| 25 | SCL | clock| Out
-| 24 | INT | interrupt | In
+| 16 | INT | interrupt | In
+| 17 | I2C_RST | i2c I/F reset | In
+| 18 | SDA | data| In/Out
+| 19 | SCL | clock| In
+| 20 | LPn | lp enable | In
+| 21 | PWREN | power enable | In
 
-
-Of course you can adjust these assignments. Adjust the follwing constants within the file `demo_pcf8575.spin2` to your liking:
+Of course you can adjust these assignments. Adjust the follwing constants within the file `demo_vl53l5cx.spin2` to your liking:
 
 ```
-    PIN_PCF8575_SCL     = 25
-    PIN_PCF8575_SDA     = 26
-    PIN_PCF8575_INT     = 24
+    PIN_HDMI_BASE   = 8
+
+    PIN_TOF_INT     = 16
+    PIN_TOF_RST     = 17
+    PIN_TOF_SDA     = 18
+    PIN_TOF_SCL     = 19
+    PIN_TOF_LPN     = 20
+    PIN_TOF_PWREN   = 21
 ```
 
-## Using the PCF8575 object in your own project
+## Using the VL53L5CX object in your own project
 
 
 
