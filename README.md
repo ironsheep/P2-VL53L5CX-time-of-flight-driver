@@ -59,7 +59,10 @@ Latest Changes:
 Things we know about that still need attention:
 
 ```
-(nothing yet)
+- Optional VL53L5CX features not yet implemented:
+ - xtalk calibration
+ - motion indicator
+ - detection threasholds
 ```
 
 ## Table of Contents
@@ -72,7 +75,8 @@ On this Page:
 Additional pages:
 
 - [GOAL - TOF Sensor: w/180° Field of View](./DOCs/Designs/README.md) - how I make this wide field-of-view sensor?
-- [PCF8575 Driver Documentation](./PCF8575.md) - this is likely to be used to select between multiple TOF sensors
+- [VL53L5CX Object Documentation](./VL53L5CX.md) - this is our TOF sensor (actual object) 
+- [PCF8575 Object Documentation](./PCF8575.md) - this is used to select between multiple TOF sensors
 
 
 ## How to Contribute
