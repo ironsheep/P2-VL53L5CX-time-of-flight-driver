@@ -94,15 +94,10 @@ The programming interface to this driver is as follows:
 | | **-- General Setup --** 
 | start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | Start the device running
 | stop() | Stop our i2c bus use and float all pins
-| enableDebug(bEnable) | Turn on/off file internal debug messaging (bEnable = T/F where T means show debug messages from this object) 
-| enableIODebug(bEnable)| Turn on/off file-internal I/O debug messaging (bEnable = T/F where T means show debug messages from this object)
-| enableTestingDebug(bEnable) | Turn on/off file-internal I/O debug messaging (bEnable = T/F where T means show debug messages from this object)
-| enableMyIOToo() | EXPERIMENTAL Allow new cog to do I/O's too
 | isAlive() : eDvcStatus, bIsAlive | Returns {bIsAlive} when {eDvcStatus} == VL53L5CX\_STATUS\_OK</br>{bIsAlive} contains T/F (where T means the device was found on the i2c bus)</br>Alternatively returns {eDvcStatus}:</br>VL53L5CX\_STATUS\_ERROR - if there was an I2C communications error
 | setI2CAddress(i2cAddress) : eDvcStatus |Reconfigure device to respond to new i2c device address</br> Returns VL53L5CX_STATUS_OK if the sensor's address was correctly changed or VL53L5CX_STATUS_ERROR otherwise.
 | getI2CAddress() : nDvcI2CAddr |Return the current i2c device address (or DVC\_NOT\_FOUND if no device found on i2c bus)
 | | **-- Alternate Muli-Sensor Setup --** 
-| | **-- Device Reads and Writes --** 
 | setPinsAndID(pSDA, pSCL, nID) : ok |Record PINs for later Deferred Start [startUsingPins()] for use by driver cog
 | startUsingPins() : bDevicePresent | Deferred Start for use by driver cog</br>MUST be preceed by setPins()
 | activateSensor() : bDevicePresent |  Deferred Start for use by driver cog   MUST be preceed by setPins() and startUsingPins()
