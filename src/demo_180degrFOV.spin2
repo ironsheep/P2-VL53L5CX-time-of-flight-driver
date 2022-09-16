@@ -76,20 +76,46 @@ CON { -------------- MAIN -------------- }
 PUB main()
     '' Main entry point of 180° Field of View demo
 
+    debug("* Setting up")
     ' configure the 180° sensor pins and HDMI display BASE-PIN
     tofSensor.setHDMIBasePin(PIN_HDMI_BASE)
     tofSensor.setExpanderPins(PIN_PCF8575_SDA0, PIN_PCF8575_SCL0, PIN_PCF8575_INT)
     tofSensor.setTofPins(1, PIN_VL75L5CX_SDA1, PIN_VL75L5CX_SCL1)
     tofSensor.setTofPins(2, PIN_VL75L5CX_SDA2, PIN_VL75L5CX_SCL2)
 
-    ' now start the sensor sensing
+    debug("* Starting Drivers")
+
+    ' now start the drivers
+    ' Init the sensors
     tofSensor.start()
 
+    debug("* Configure Sensors")
+    ' Set Sensor configuration
+    tofSensor.setParameter(tofSensor.PID_RESOLUTION, tofSensor.VL53L5CX_RESOLUTION_8X8)
+
+    waitHereForever()
 
 
+    ' let's start ranging!
+    tofSensor.enableSensing(TRUE)
 
 
+    waitHereForever()
 
+    ' run for 2 minutes
+    waitms(2 * 60 * 1000)   ' 2 * 1 minute (60 * 1000mSec)
+
+    ' let's stop ranging!
+    tofSensor.enableSensing(FALSE)
+
+
+    debug("* DONE")
+    tofSensor.stop()
+
+PRI waitHereForever()
+    debug(" ")
+    debug("* HOLD for evaulation")
+    repeat  ' hold here for now
 
 CON { license }
 

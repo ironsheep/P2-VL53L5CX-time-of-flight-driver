@@ -38,13 +38,40 @@ CON { basic constants }
     TEST_WORD_CT = 4
 
     ' internal driver commands
-    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_ENABLE_RANGING, DC_STOP, DC_SET_PARM, DC_GET_PARM
-    #$E0, RSP_UNKNOWN, RSP_OK, RSP_ERROR
+    #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_STOP, DC_ENABLE_RANGING, DC_DISABLE_RANGING, DC_SET_PARM, DC_GET_PARM
+    #$E0, RSP_UNKNOWN, RSP_PROCESSING_CMD, RSP_OK, RSP_ERROR, RSP_BAD_PARAM_ID
 
-    #$80, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL, ERR_SET_PARAM_FAIL, ERR_GET_PARAM_FAIL
+    #$80, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL, ERR_SET_PARAM_FAIL, ERR_GET_PARAM_FAIL, ERR_CMD_UNKNOWN
 
     #$10, PID_RANGING_FREQUENCY, PID_RANGING_MODE, PID_RESOLUTION, PID_POWER_MODE
     #$14, PID_INTEGRATION_TIME, PID_SHARPENER_PERCENT, PID_TARGET_ORDER
+
+    ' INTERFACE FORWARDING:
+    ' The default power mode is VL53L5CX_POWER_MODE_WAKEUP. User can choose
+'  the mode VL53L5CX_POWER_MODE_SLEEP to save power consumption is the device
+'  is not used. The low power mode retains the firmware and the configuration.
+'  Both modes can be changed using function setPowerMode().
+    VL53L5CX_POWER_MODE_SLEEP       = tofSensor.VL53L5CX_POWER_MODE_SLEEP
+    VL53L5CX_POWER_MODE_WAKEUP      = tofSensor.VL53L5CX_POWER_MODE_WAKEUP
+
+'  VL53L5CX_RANG_MODE_CONTINUOUS and
+'  VL53L5CX_RANG_MODE_AUTONOMOUS are used to change the ranging mode.
+'  Autonomous mode can be used to set a precise integration time, whereas
+'  continuous is always maximum.
+    VL53L5CX_RANG_MODE_CONTINUOUS   = tofSensor.VL53L5CX_RANG_MODE_CONTINUOUS
+    VL53L5CX_RANG_MODE_AUTONOMOUS   = tofSensor.VL53L5CX_RANG_MODE_AUTONOMOUS
+
+'  VL53L5CX_TGT_ORDER_STRONGEST or VL53L5CX_TGT_ORDER_CLOSEST
+'    are used to select the target order for data output.
+    VL53L5CX_TGT_ORDER_CLOSEST      = tofSensor.VL53L5CX_TGT_ORDER_CLOSEST
+    VL53L5CX_TGT_ORDER_STRONGEST    = tofSensor.VL53L5CX_TGT_ORDER_STRONGEST
+
+'  VL53L5CX_RESOLUTION_4X4 or VL53L5CX_RESOLUTION_8X8 allows
+'   setting sensor in 4x4 mode or 8x8 mode, using the function
+'   setResolution().
+    VL53L5CX_RESOLUTION_4X4         = tofSensor.VL53L5CX_RESOLUTION_4X4
+    VL53L5CX_RESOLUTION_8X8         = tofSensor.VL53L5CX_RESOLUTION_8X8
+
 
     VALUE_NOT_SET = (-1)
 
@@ -95,7 +122,7 @@ PUB setExpanderPins(pSDA, pSCL, pinINT)
 '' this listens to and controls all 4 TOF sensors
     pcf8575.setPins(pSDA, pSCL, pinINT)
 
-PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt, bError
+PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt, bError, bTimedOut
 '' Start all backend objects and our Overall driver Cog
     if bUseHDMI
         tvDebug.start(pinHDMIbase, @screenTitle)
@@ -106,7 +133,7 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     else
         showHDMIDebug := FALSE  ' force this off is not using HDMI
 
-    ok := cog := cogspin(NEWCOG, taskRun180FovSensor(@nDriverCmd, @nDriverArg, @drvrArgValue, @drvrResponse), @taskStack) + 1
+    ok := cog := cogspin(NEWCOG, taskRun180FovSensor(@nDriverCmd, @nDriverArg, @nDrvrArgValue, @nDrvrResponse), @taskStack) + 1
 
     'wait driver running
     waitDriverStarted()
@@ -115,57 +142,11 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     debug("* Loading Sensors")
     nDriverCmd := DC_START
 
-    bError := waitCommandComplete()
-    if not bError
+    bError, bTimedOut := waitCommandComplete()
+    if not bError and not bTimedOut
         debug("* Init Complete!")
 
-{
-    drvrArg := PID_RESOLUTION   ' parameter ID
-    nDriverCmd := DC_GET_PARM
-    bError := waitCommandComplete()
-    if not bError
-        debug(" eee drvr says ", udec(drvrArgValue))
-        currentResolution := drvrArgValue
-        currentImageWidth := SQRT currentResolution
-        debug("* resolution is ", udec(currentImageWidth))
-'}
-
-    ' just expect it!
-    currentResolution := tofSensor.VL53L5CX_RESOLUTION_8X8
-    currentImageWidth := SQRT currentResolution
-    ' let's hand off data area pointers to our video subsystem
-    configureVideoDisplays()
-
-{   the correct way
-    ' let's set resolution
-    drvrArg := PID_RESOLUTION   ' parameter ID
-    drvrArgValue := tofSensor.VL53L5CX_RESOLUTION_8x8
-    nDriverCmd := DC_SET_PARM
-    bError := waitCommandComplete()
-    if not bError
-        currentResolution := tofSensor.VL53L5CX_RESOLUTION_8x8
-        currentImageWidth := SQRT currentResolution
-        debug("* resolution set!")
-'}
-
-{
-    ' ** but for now we let backend task just force it
-    currentResolution := tofSensor.VL53L5CX_RESOLUTION_8x8
-    currentImageWidth := SQRT currentResolution
-'}
-
-'{
-    ' let's start ranging (w/auto unload of data)
-    debug("* Start Ranging")
-    nDriverCmd := DC_ENABLE_RANGING
-    bError := waitCommandComplete()
-    if not bError
-        debug("* now Ranging!")
-'}
-
-
     debug("* start up complete!")
-    ' tell driver to set-up bus 2
 
 PUB stop()
 '' Stop our driver-Cog and all backend objects
@@ -181,47 +162,34 @@ PUB stop()
         cog := 0
 
 
-PRI waitDriverStarted()
-    debug("  -- waiting for driver started")
-    repeat until nDriverCmd == DC_IDLE
-
-PRI waitCommandComplete() : bError
-    bError := FALSE
-    debug("  -- waiting for ready")
-    repeat until nDriverCmd <> DC_IDLE
-    repeat until drvrResponse <> RSP_UNKNOWN
-    if drvrResponse <> RSP_OK
-        bError := TRUE
-        debug("  -- EEEE driver reports fault: ", uhex_(drvrArgValue))
-
-
 CON ' -------------- COMMAND Interface --------------
 
-PUB setParm(nParmId, nParmValue) : nResponse | bTimedOut
-'' NOT WORKING: Example drive command,,,
-    drvrArg := nParmId
-    drvrArgValue := nParmValue
+PUB setParameter(nParmId, nParmValue) : nResponse | bError, bTimedOut
+'' set value for given parameter name
+    nDriverArg := nParmId
+    nDrvrArgValue := nParmValue
     nDriverCmd := DC_SET_PARM
     ' wait for command to be accepted
-    bTimedOut := waitForCommandAccepted()
+    bError, bTimedOut := waitCommandComplete()
 
     nResponse := DRVR_DIDNT_RESPOND
     if not bTimedOut
-        nResponse := drvrResponse
+        nResponse := nDrvrResponse
 
-PUB getParm(nParmId) : nParmValue | bTimedOut
-'' NOT WORKING: Example drive command,,,
-    drvrArg := nParmId
+PUB getParameter(nParmId) : nParmValue | bError, bTimedOut
+'' Get current Value for given parameter name
+    nDriverArg := nParmId
+    nDriverCmd := DC_GET_PARM
 
     ' wait for command to be accepted
-    bTimedOut := waitForCommandAccepted()
+    bError, bTimedOut := waitCommandComplete()
 
     nParmValue := DRVR_DIDNT_RESPOND
-    if not bTimedOut
-        nParmValue := drvrResponse
+    if not bTimedOut and not bError
+        nParmValue := nDrvrResponse
 
-PUB enableSensing(bEnable) : nResponse | bTimedOut  ' turn sensing on/off
-'' NOT WORKING: Example drive command,,,
+PUB enableSensing(bEnable) : nResponse | bError, bTimedOut  ' turn sensing on/off
+'' Enable or Disable ranging
     ' block until prior message accepted
     'repeat
     '    if nDriverArg <> 0
@@ -229,21 +197,24 @@ PUB enableSensing(bEnable) : nResponse | bTimedOut  ' turn sensing on/off
     '    else
      '       quit
     ' request next message
-    nDriverCmd := (bEnable) ? DC_START : DC_STOP
+    nDriverCmd := (bEnable) ? DC_ENABLE_RANGING : DC_ENABLE_RANGING
     ' wait for command to be accepted
-    bTimedOut := waitForCommandAccepted()
+    bError, bTimedOut := waitCommandComplete()
     nResponse := DRVR_DIDNT_RESPOND
     if not bTimedOut
-        nResponse := drvrResponse
-
-
+        nResponse := nDrvrResponse
 
 CON ' -------------- PRIVATE (Utility) Methods --------------
 
-PRI waitForCommandAccepted() : bTimedOut
-' wait for ack or timeout
+PRI waitDriverStarted()
+    debug("  -- waiting for driver started")
+    repeat until nDriverCmd == DC_IDLE
+
+PRI waitCommandComplete() : bError, bTimedOut
+    bError := FALSE
     bTimedOut := TRUE
-    repeat 200
+    debug("  -- waiting for ready")
+    repeat 2000 ' 2 seconds before timeout
         if nDriverCmd == DC_IDLE
             bTimedOut := FALSE
             quit
@@ -251,12 +222,16 @@ PRI waitForCommandAccepted() : bTimedOut
 
     if bTimedOut
         debug("180: request timed-out. ERROR?")
+    if nDrvrResponse <> RSP_OK
+        bError := TRUE
+        debug("  -- EEEE driver reports fault: ", uhex_(nDrvrArgValue))
+
 
 VAR { driver internal variables }
     LONG    cog
     LONG    pinHDMIbase
 
-CON ' -------------- TASK in own COG --------------
+CON ' ============= TASK in own COG =============
 
 DAT { debug display data }
 
@@ -264,8 +239,8 @@ DAT { debug display data }
 
     nDriverCmd      long    DC_UNKNOWN
     nDriverArg      long    0
-    drvrResponse    long    0
-    drvrArgValue    long    0
+    nDrvrResponse    long    0
+    nDrvrArgValue    long    0
     taskStack       long    0[STACK_SIZE_LONGS]
 
     priorRawInts    long    0
@@ -314,9 +289,6 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
     if nbrSensorsFound > 0
         setLPnBits()
 
-    ' TEMP force TOF 1 into 8x8
-    'ok := setTof1Resolution(tofSensor.VL53L5CX_RESOLUTION_8x8)
-
     if not ok and nbrSensorsFound == 0
         debug("TSK: ERROR: not started")
     else
@@ -329,7 +301,6 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
 
         repeat
             drvrCommand := LONG[pDriverCmd]
-            drvrArg := LONG[pDriverArg]
 
             if drvrCommand <> DC_IDLE and drvrCommand <> DC_UNKNOWN
                 LONG[pDriverCmd] := DC_UNKNOWN          ' while we dispatch
@@ -342,47 +313,6 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
 
             waitms(250)    ' idle for 1/4 sec.
 
-PRI setResolution() | eDvcStatus
-
-    eDvcStatus := tofSensor[0].setResolution(tofSensor.VL53L5CX_RESOLUTION_8X8)
-    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-        debug("TSK: ERROR - failed to set resolution to 8x8")
-
-{
-    eDvcStatus := tofSensor[0].setRangingFrequencyHz(2)
-    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-        debug("TSK: ERROR - failed to set FrequencyHz to 2")
-'}
-
-PRI loadSettings() | eDvcStatus, readValue
-
-    eDvcStatus, readValue := tofSensor[0].getRangingFrequencyHz()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        frequencyHz8 := readValue
-
-    eDvcStatus, readValue := tofSensor[0].getRangingMode()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        eRangingMode := readValue
-
-    eDvcStatus, readValue := tofSensor[0].getPowerMode()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        ePowerMode := readValue
-
-    eDvcStatus, readValue := tofSensor[0].getIntegrationTime()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        timeMsec32 := readValue
-
-    eDvcStatus, readValue := tofSensor[0].getSharpenerPercent()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        percent8 := readValue
-
-    eDvcStatus, readValue := tofSensor[0].getTargetOrder()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        targetOrder := readValue
-
-    eDvcStatus, readValue := tofSensor[0].getResolution()
-    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
-        resolution := readValue
 
 PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSensorRanging, bDataReturned
     ' poll our TOF devices for data ready
@@ -422,15 +352,14 @@ PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSenso
 '}
 
 
-PRI setTof1Resolution(newResolution) : ok |   eDvcStatus
-    ok := TRUE
-    eDvcStatus := tofSensor[0].setResolution(newResolution)
-    if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-        ok := FALSE
-
-PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK
+PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK, arg, argValue, newValue
     bCanGoIdle := FALSE
     debug("TSK: Handling ", udec(newCommand))
+    LONG[parmPtrResponse] := RSP_PROCESSING_CMD
+
+    arg := LONG[parmPtrArg]
+    argValue := LONG[parmPtrArgValue]
+    debug("TSK: hndl cmd ", udec(arg), udec(argValue))
     case newCommand
         DC_STOP:
             debug("TSK: cmd stop")
@@ -442,23 +371,7 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
             bCanGoIdle := TRUE
         DC_START:
             debug("TSK: cmd start")
-            ' init just TOF #1
-            bDvcPresent := tofSensor[0].activateSensor()
-            if not bDvcPresent
-                rptDriverFault(ERR_INIT_FAIL)
-            else
-                bCanGoIdle := TRUE
-
-
-                ' set resolution 8x8
-                setResolution()
-
-                ' set freq 5 hz
-
-                ' read settings for display
-                loadSettings()
-
-            {
+            ' init each sensor
             repeat tofIdx from 0 to 4 - 1
                 bDvcPresent := tofSensor[tofIdx].activateSensor()
                 if not bDvcPresent
@@ -468,7 +381,9 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
                     bCanGoIdle := TRUE
                 else
                     waitms(10) ' delay to next start
-            '}
+                ' read settings for display
+            loadSettings()
+
         DC_ENABLE_RANGING:
             debug("TSK: cmd enbl ranging")
             ' start just TOF #1
@@ -489,24 +404,44 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
                 else
                     waitms(10) ' delay to next start
             '}
+        DC_DISABLE_RANGING:
+            debug("TSK: cmd dsbl ranging")
+            repeat tofIdx from 0 to 4 - 1
+                eDvcStatus := tofSensor[tofIdx].stopRanging()
+                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                    rptDriverFault(ERR_DVC_CMD_FAIL)
+                    quit
+                elseif tofIdx == 4 - 1
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+
         DC_SET_PARM:
             debug("TSK: cmd set param")
-            bOK := handleSetupChange()
-            if not bOK
-                rptDriverFault(ERR_SET_PARAM_FAIL)
-            else
-                bCanGoIdle := TRUE
+            ' init each sensor
+            repeat tofIdx from 0 to 4 - 1
+                bOK := handleSetupChange(tofIdx, arg, argValue)
+                if not bDvcPresent
+                    rptDriverFault(ERR_SET_PARAM_FAIL)
+                    quit
+                elseif tofIdx == 4 - 1
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
 
         DC_GET_PARM:
             debug("TSK: cmd get param")
-            bOK := handleSetupQuery()
+            tofIdx := 0 ' let's query only 0 for now...
+            bOK, newValue := handleSetupQuery(tofIdx, arg)
             if not bOK
                 rptDriverFault(ERR_GET_PARAM_FAIL)
             else
+                LONG[parmPtrArgValue] := newValue
                 bCanGoIdle := TRUE
 
         other:
-            ' nothing to do here
+            debug("TSK: ERROR (cmd) unk cmd enum ", uhex_(newCommand))
+            rptDriverFault(ERR_CMD_UNKNOWN)
 
     ' if we are allowed to ACK command, do so
     if bCanGoIdle
@@ -520,8 +455,9 @@ PRI ackDriverCommand()
 
 PRI rptDriverFault(faultValue)
     ' indicate we ended with fault and set identifying value
-    long[parmPtrResponse] := RSP_ERROR
     long[parmPtrArgValue] := faultValue
+    if LONG[parmPtrResponse] == RSP_UNKNOWN
+        long[parmPtrResponse] := RSP_ERROR  ' general error if  NOT already a value
     long[parmPtrCmd] := DC_IDLE
 
 PRI gatherInterruptInfo() : bfoundSomeReady | nRawInts, nBit, bitMask, tofIdx, BYTE newBit, BYTE oldBit
@@ -544,6 +480,37 @@ PRI gatherInterruptInfo() : bfoundSomeReady | nRawInts, nBit, bitMask, tofIdx, B
                     bfoundSomeReady := TRUE
             ' set new prior
             priorRawInts := nRawInts
+
+PRI loadSettings() | eDvcStatus, readValue
+
+    eDvcStatus, readValue := tofSensor[0].getRangingFrequencyHz()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        frequencyHz8 := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getRangingMode()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        eRangingMode := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getPowerMode()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        ePowerMode := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getIntegrationTime()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        timeMsec32 := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getSharpenerPercent()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        percent8 := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getTargetOrder()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        targetOrder := readValue
+
+    eDvcStatus, readValue := tofSensor[0].getResolution()
+    if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
+        resolution := readValue
+
 
 {
 PRI checkAndDoUnloadsUsingINT()
@@ -667,38 +634,62 @@ PRI reAddressTOFsensors()
     '    ensure TOF now responds at new address
     ' DONE
 
-PRI handleSetupChange() : ok | parameter, parmValue, tofIdx, eDvcStatus
-    parameter := LONG[parmPtrArg]
-    parmValue := LONG[parmPtrArgValue]
-
+PRI handleSetupChange(nTofIdx, arg, argValue) : ok | eDvcStatus
+' configure a single TOF sensor {nTofIdx} parameter {arg} with new {argValue}
     ok := TRUE
-    case parameter
+    case arg
+        PID_RANGING_FREQUENCY:
+            eDvcStatus := tofSensor[nTofIdx].setRangingFrequencyHz(argValue)
+        PID_RANGING_MODE:
+            eDvcStatus := tofSensor[nTofIdx].setRangingMode(argValue)
         PID_RESOLUTION:
-'            repeat tofIdx from 0 to 4 - 1
-'                eDvcStatus := tofSensor[tofIdx].setResolution(parmValue)
-            eDvcStatus := tofSensor[0].setResolution(parmValue)
-            if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-                ok := FALSE
+            eDvcStatus := tofSensor[nTofIdx].setResolution(argValue)
+        PID_POWER_MODE:
+            eDvcStatus := tofSensor[nTofIdx].setPowerMode(argValue)
+        PID_INTEGRATION_TIME:
+            eDvcStatus := tofSensor[nTofIdx].setIntegrationTime(argValue)
+        PID_SHARPENER_PERCENT:
+            eDvcStatus := tofSensor[nTofIdx].setSharpenerPercent(argValue)
+        PID_TARGET_ORDER:
+            eDvcStatus := tofSensor[nTofIdx].setTargetOrder(argValue)
         other:
-            debug("TSK: ERROR (set) unk PID_ enum ", uhex_(parameter))
+            debug("TSK: ERROR (set) unk PID_ enum ", uhex_(arg))
+            LONG[parmPtrResponse] := RSP_BAD_PARAM_ID
 
+    if LONG[parmPtrResponse] == RSP_UNKNOWN
+        ' still good condition our response
+        if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+            ok := FALSE
 
-PRI handleSetupQuery() : ok | parameter, parmValue, tofIdx, eDvcStatus
-    parameter := LONG[parmPtrArg]
-
+PRI handleSetupQuery(nTofIdx, parmId) : ok, parmValue | eDvcStatus, valueRead
+' query a single TOF sensor {nTofIdx} parameter {arg} and return the value read
     ok := TRUE
-    case parameter
+    case parmId
+        PID_RANGING_FREQUENCY:
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getRangingFrequencyHz()
+        PID_RANGING_MODE:
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getRangingMode()
         PID_RESOLUTION:
-'            repeat tofIdx from 0 to 4 - 1
-'                eDvcStatus := tofSensor[tofIdx].setResolution(parmValue)
-            eDvcStatus, parmValue := tofSensor[0].getResolution()
-            debug("TSK:   (DBG) ", udec(eDvcStatus), udec(parmValue))
-            if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-                ok := FALSE
-            else
-                LONG[parmPtrArgValue] := parmValue
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getResolution()
+        PID_POWER_MODE:
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getPowerMode()
+        PID_INTEGRATION_TIME:
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getIntegrationTime()
+        PID_SHARPENER_PERCENT:
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getSharpenerPercent()
+        PID_TARGET_ORDER:
+            eDvcStatus, valueRead := tofSensor[nTofIdx].getTargetOrder()
         other:
-            debug("TSK: ERROR (get) unk PID_ enum ", uhex_(parameter))
+            debug("TSK: ERROR (get) unk PID_ enum ", uhex_(parmId))
+            ok := FALSE
+            LONG[parmPtrResponse] := RSP_BAD_PARAM_ID
+
+    if ok == TRUE
+        'debug("TSK:   (DBG) ", udec(eDvcStatus), udec(parmValue))
+        if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+            ok := FALSE
+        else
+            parmValue := valueRead
 
 DAT { TASK Data }
 
