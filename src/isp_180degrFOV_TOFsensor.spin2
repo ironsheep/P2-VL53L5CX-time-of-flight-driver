@@ -421,7 +421,7 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
             ' init each sensor
             repeat tofIdx from 0 to 4 - 1
                 bOK := handleSetupChange(tofIdx, arg, argValue)
-                if not bDvcPresent
+                if not bOK
                     rptDriverFault(ERR_SET_PARAM_FAIL)
                     quit
                 elseif tofIdx == 4 - 1
@@ -456,7 +456,7 @@ PRI ackDriverCommand()
 PRI rptDriverFault(faultValue)
     ' indicate we ended with fault and set identifying value
     long[parmPtrArgValue] := faultValue
-    if LONG[parmPtrResponse] == RSP_UNKNOWN
+    if LONG[parmPtrResponse] == RSP_PROCESSING_CMD ' it could already be "bad parm id"
         long[parmPtrResponse] := RSP_ERROR  ' general error if  NOT already a value
     long[parmPtrCmd] := DC_IDLE
 
@@ -654,9 +654,10 @@ PRI handleSetupChange(nTofIdx, arg, argValue) : ok | eDvcStatus
             eDvcStatus := tofSensor[nTofIdx].setTargetOrder(argValue)
         other:
             debug("TSK: ERROR (set) unk PID_ enum ", uhex_(arg))
+            ok := FALSE
             LONG[parmPtrResponse] := RSP_BAD_PARAM_ID
 
-    if LONG[parmPtrResponse] == RSP_UNKNOWN
+    if ok == TRUE
         ' still good condition our response
         if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
             ok := FALSE
