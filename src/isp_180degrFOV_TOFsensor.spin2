@@ -12,7 +12,8 @@
 '' =================================================================================================
 CON { PUBLIC Interface Constants }
 
-    DRVR_DIDNT_RESPOND = (-1)
+    DRVR_DIDNT_RESPOND  = (-1)
+    DRVR_CMD_OK         = 0
 
 CON { fixed io pins }
 
@@ -39,12 +40,13 @@ CON { basic constants }
 
     ' internal driver commands
     #0, DC_UNKNOWN, DC_IDLE, DC_START, DC_STOP, DC_ENABLE_RANGING, DC_DISABLE_RANGING, DC_SET_PARM, DC_GET_PARM
-    #$E0, RSP_UNKNOWN, RSP_PROCESSING_CMD, RSP_OK, RSP_ERROR, RSP_BAD_PARAM_ID
 
-    #$80, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL, ERR_SET_PARAM_FAIL, ERR_GET_PARAM_FAIL, ERR_CMD_UNKNOWN
+    #50, RSP_UNKNOWN, RSP_PROCESSING_CMD, RSP_OK, RSP_ERROR, RSP_BAD_PARAM_ID
 
-    #$10, PID_RANGING_FREQUENCY, PID_RANGING_MODE, PID_RESOLUTION, PID_POWER_MODE
-    #$14, PID_INTEGRATION_TIME, PID_SHARPENER_PERCENT, PID_TARGET_ORDER
+    #128, ERR_UNKNOWN, ERR_INIT_FAIL, ERR_DVC_CMD_FAIL, ERR_SET_PARAM_FAIL, ERR_GET_PARAM_FAIL, ERR_CMD_UNKNOWN
+
+    #16, PID_RANGING_FREQUENCY, PID_RANGING_MODE, PID_RESOLUTION, PID_POWER_MODE
+    #20, PID_INTEGRATION_TIME, PID_SHARPENER_PERCENT, PID_TARGET_ORDER
 
     ' INTERFACE FORWARDING:
     ' The default power mode is VL53L5CX_POWER_MODE_WAKEUP. User can choose
@@ -122,7 +124,7 @@ PUB setExpanderPins(pSDA, pSCL, pinINT)
 '' this listens to and controls all 4 TOF sensors
     pcf8575.setPins(pSDA, pSCL, pinINT)
 
-PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt, bError, bTimedOut
+PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars, imageWidth, bDvcFound, eDvcStatus, bDataReturned, bDataUnloaded, readCt, nResponse
 '' Start all backend objects and our Overall driver Cog
     if bUseHDMI
         tvDebug.start(pinHDMIbase, @screenTitle)
@@ -133,17 +135,17 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     else
         showHDMIDebug := FALSE  ' force this off is not using HDMI
 
-    ok := cog := cogspin(NEWCOG, taskRun180FovSensor(@nDriverCmd, @nDriverArg, @nDrvrArgValue, @nDrvrResponse), @taskStack) + 1
+    ok := cog := cogspin(NEWCOG, taskRun180FovSensor(), @taskStack) + 1
 
     'wait driver running
     waitDriverStarted()
 
     ' tell driver to set-up bus 1
     debug("* Loading Sensors")
-    nDriverCmd := DC_START
+    dvrCommand := DC_START
 
-    bError, bTimedOut := waitCommandComplete()
-    if not bError and not bTimedOut
+    nResponse := waitCommandComplete()
+    if nResponse == DRVR_CMD_OK
         debug("* Init Complete!")
 
     debug("* start up complete!")
@@ -151,9 +153,9 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
 PUB stop()
 '' Stop our driver-Cog and all backend objects
     ' shtudown sensing
-    nDriverCmd := DC_STOP
+    dvrCommand := DC_STOP
     debug("  -- waiting for driver shutdown")
-    repeat until nDriverCmd <> DC_STOP
+    repeat until dvrCommand <> DC_STOP
 
     debug("* is shutdown. Stopping all")
     ' stop our cog
@@ -166,65 +168,60 @@ CON ' -------------- COMMAND Interface --------------
 
 PUB setParameter(nParmId, nParmValue) : nResponse | bError, bTimedOut
 '' set value for given parameter name
-    nDriverArg := nParmId
-    nDrvrArgValue := nParmValue
-    nDriverCmd := DC_SET_PARM
-    ' wait for command to be accepted
-    bError, bTimedOut := waitCommandComplete()
+    dvrParameter := nParmId
+    dvrParamValue := nParmValue
+    dvrCommand := DC_SET_PARM
+    ' wait for command to complete
+    nResponse := waitCommandComplete()
 
-    nResponse := DRVR_DIDNT_RESPOND
-    if not bTimedOut
-        nResponse := nDrvrResponse
-
-PUB getParameter(nParmId) : nParmValue | bError, bTimedOut
+PUB getParameter(nParmId) : nResponse, nParmValue | bError, bTimedOut
 '' Get current Value for given parameter name
-    nDriverArg := nParmId
-    nDriverCmd := DC_GET_PARM
+    dvrParameter := nParmId
+    dvrCommand := DC_GET_PARM
 
-    ' wait for command to be accepted
-    bError, bTimedOut := waitCommandComplete()
-
-    nParmValue := DRVR_DIDNT_RESPOND
-    if not bTimedOut and not bError
-        nParmValue := nDrvrResponse
+    ' wait for command to complete
+    nResponse := waitCommandComplete()
+    if nResponse == DRVR_CMD_OK
+        nParmValue := dvrResponse
 
 PUB enableSensing(bEnable) : nResponse | bError, bTimedOut  ' turn sensing on/off
-'' Enable or Disable ranging
-    ' block until prior message accepted
-    'repeat
-    '    if nDriverArg <> 0
-    '        waitms(50)
-    '    else
-     '       quit
-    ' request next message
-    nDriverCmd := (bEnable) ? DC_ENABLE_RANGING : DC_ENABLE_RANGING
-    ' wait for command to be accepted
-    bError, bTimedOut := waitCommandComplete()
-    nResponse := DRVR_DIDNT_RESPOND
-    if not bTimedOut
-        nResponse := nDrvrResponse
+'' Enable(TRUE) or Disable(false) ranging
+    dvrCommand := (bEnable) ? DC_ENABLE_RANGING : DC_DISABLE_RANGING
+    ' wait for command to complete
+    nResponse := waitCommandComplete()
 
 CON ' -------------- PRIVATE (Utility) Methods --------------
 
 PRI waitDriverStarted()
     debug("  -- waiting for driver started")
-    repeat until nDriverCmd == DC_IDLE
+    repeat until dvrCommand == DC_IDLE
 
-PRI waitCommandComplete() : bError, bTimedOut
+PRI waitCommandComplete() : nResponse | bError, bTimedOut
     bError := FALSE
     bTimedOut := TRUE
     debug("  -- waiting for ready")
     repeat 2000 ' 2 seconds before timeout
-        if nDriverCmd == DC_IDLE
+        if dvrCommand == DC_IDLE
             bTimedOut := FALSE
             quit
         waitms(10)
 
     if bTimedOut
-        debug("180: request timed-out. ERROR?")
-    if nDrvrResponse <> RSP_OK
+        debug("180: request timed-out...")
+    if dvrResponse <> RSP_OK
         bError := TRUE
-        debug("  -- EEEE driver reports fault: ", uhex_(nDrvrArgValue))
+        debug("  -- EEEE driver reports fault: ", uhex_(dvrParamValue))
+
+    if not bTimedOut
+        nResponse := DRVR_DIDNT_RESPOND
+    elseif not bError
+        if dvrResponse == RSP_OK
+            nResponse := DRVR_CMD_OK
+        else
+            nResponse := dvrResponse
+    else
+        nResponse := dvrResponse
+
 
 
 VAR { driver internal variables }
@@ -237,27 +234,23 @@ DAT { debug display data }
 
     screenTitle     BYTE    "-- 180° Field of View Sensor Debug --", 0
 
-    nDriverCmd      long    DC_UNKNOWN
-    nDriverArg      long    0
-    nDrvrResponse    long    0
-    nDrvrArgValue    long    0
-    taskStack       long    0[STACK_SIZE_LONGS]
+    dvrCommand      LONG    DC_UNKNOWN
+    dvrParameter      LONG    0
+    dvrResponse    LONG    0
+    dvrParamValue    LONG    0
+    taskStack       LONG    0[STACK_SIZE_LONGS]
 
-    priorRawInts    long    0
+    priorRawInts    LONG    0
 
-    bDevicePreset   byte    FALSE
-    bDataAvail      byte    FALSE
+    bDevicePreset   BYTE    FALSE
+    bDataAvail      BYTE    FALSE
 
-    bIntPending     byte    FALSE[4]
+    bIntPending     BYTE    FALSE[4]
 
 
 
-PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse) | nbit, ok, nbrSensorsFound
+PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand
     'repeat  ' stop here !!!
-    parmPtrCmd          := pDriverCmd
-    parmPtrArg          := pDriverArg
-    parmPtrArgValue     := pDriverArgValue
-    parmPtrResponse     := pDriverResponse
 
     Debug("TSK: Starting...")
     ' init device complex
@@ -296,22 +289,126 @@ PRI taskRun180FovSensor(pDriverCmd, pDriverArg, pDriverArgValue, pDriverResponse
 
         ' mark that driver is runnig
         Debug("TSK: Running...")
-        LONG[pDriverResponse] := RSP_UNKNOWN
-        LONG[pDriverCmd] := DC_IDLE
+        LONG[@dvrResponse] := RSP_UNKNOWN
+        LONG[@dvrCommand] := DC_IDLE
 
         repeat
-            drvrCommand := LONG[pDriverCmd]
+            newCommand := LONG[@dvrCommand]
 
-            if drvrCommand <> DC_IDLE and drvrCommand <> DC_UNKNOWN
-                LONG[pDriverCmd] := DC_UNKNOWN          ' while we dispatch
-                LONG[pDriverResponse] := RSP_UNKNOWN
+            ' if legit command arrived...
+            if newCommand <> DC_IDLE and newCommand <> DC_UNKNOWN
+                ' while we dispatch
+                LONG[@dvrResponse] := RSP_UNKNOWN
+                LONG[@dvrCommand] := DC_UNKNOWN
+                handleDriverCommand(newCommand)
 
-                if drvrCommand <> DC_IDLE and drvrCommand <> DC_UNKNOWN
-                    handleDriverCommand(drvrCommand)
-
-            checkAndDoUnloadsPollingTOFs()
+            'checkAndDoUnloadsPollingTOFs()
 
             waitms(250)    ' idle for 1/4 sec.
+
+
+PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK, newParam, paramValue, newValue, lastSensor
+    bCanGoIdle := FALSE
+    debug("TSK: Handling ", udec(newCommand))
+    LONG[@dvrResponse] := RSP_PROCESSING_CMD
+
+    lastSensor := 4 - 1
+    newParam := LONG[@dvrParameter]
+    paramValue := LONG[@dvrParamValue]
+    debug("TSK: hndl cmd ", udec(newParam), udec(paramValue))
+    case newCommand
+        DC_STOP:
+            debug("TSK: cmd stop")
+            ' stop our back-end comms
+            repeat tofIdx from 0 to lastSensor
+                tofSensor[tofIdx].stop()
+            pcf8575.stop()
+            tvDebug.stop()
+            bCanGoIdle := TRUE
+        DC_START:
+            debug("TSK: cmd start")
+            ' init each sensor
+            repeat tofIdx from 0 to lastSensor
+                bDvcPresent := tofSensor[tofIdx].activateSensor()
+                if not bDvcPresent
+                    rptDriverFault(ERR_INIT_FAIL)
+                    quit
+                elseif tofIdx == lastSensor
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+                ' read settings for display
+            loadSettings()
+
+        DC_ENABLE_RANGING:
+            debug("TSK: cmd enbl ranging")
+            repeat tofIdx from 0 to lastSensor
+                eDvcStatus := tofSensor[tofIdx].startRanging()
+                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                    rptDriverFault(ERR_DVC_CMD_FAIL)
+                    quit
+                elseif tofIdx == lastSensor
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+
+        DC_DISABLE_RANGING:
+            debug("TSK: cmd dsbl ranging")
+            repeat tofIdx from 0 to lastSensor
+                eDvcStatus := tofSensor[tofIdx].stopRanging()
+                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                    rptDriverFault(ERR_DVC_CMD_FAIL)
+                    quit
+                elseif tofIdx == lastSensor
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+
+        DC_SET_PARM:
+            debug("TSK: cmd set param")
+            ' init each sensor
+            repeat tofIdx from 0 to lastSensor
+                bOK := handleSetupChange(tofIdx, newParam, paramValue)
+                if not bOK
+                    rptDriverFault(ERR_SET_PARAM_FAIL)
+                    quit
+                elseif tofIdx == lastSensor
+                    bCanGoIdle := TRUE
+                else
+                    waitms(10) ' delay to next start
+
+        DC_GET_PARM:
+            debug("TSK: cmd get param")
+            tofIdx := 0 ' let's query only 0 for now...
+            bOK, newValue := handleSetupQuery(tofIdx, newParam)
+            if not bOK
+                rptDriverFault(ERR_GET_PARAM_FAIL)
+            else
+                LONG[@dvrParamValue] := newValue
+                bCanGoIdle := TRUE
+
+        other:
+            debug("TSK: ERROR (cmd) unk cmd enum ", uhex_(newCommand))
+            rptDriverFault(ERR_CMD_UNKNOWN)
+
+    ' if we are allowed to ACK command, do so
+    if bCanGoIdle
+        ' indicate we are done processing command
+        ackDriverCommand()
+
+PRI ackDriverCommand()
+    ' indicate we are done processing command
+    debug("TSK:  -- OK")
+    LONG[@dvrResponse] := RSP_OK
+    LONG[@dvrCommand] := DC_IDLE
+
+PRI rptDriverFault(faultValue)
+    ' indicate we ended with fault and set identifying value
+    LONG[@dvrParamValue] := faultValue
+    if LONG[@dvrResponse] == RSP_PROCESSING_CMD ' it could already be "bad parm id"
+        LONG[@dvrResponse] := RSP_ERROR  ' general error if  NOT already a value
+    LONG[@dvrCommand] := DC_IDLE
+    debug("TSK:  -- ERR")
 
 
 PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSensorRanging, bDataReturned
@@ -351,114 +448,6 @@ PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSenso
                 BYTE[@bIntPending][tofIdx] := FALSE
 '}
 
-
-PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK, arg, argValue, newValue
-    bCanGoIdle := FALSE
-    debug("TSK: Handling ", udec(newCommand))
-    LONG[parmPtrResponse] := RSP_PROCESSING_CMD
-
-    arg := LONG[parmPtrArg]
-    argValue := LONG[parmPtrArgValue]
-    debug("TSK: hndl cmd ", udec(arg), udec(argValue))
-    case newCommand
-        DC_STOP:
-            debug("TSK: cmd stop")
-            ' stop our back-end comms
-            repeat tofIdx from 0 to 4 - 1
-                tofSensor[tofIdx].stop()
-            pcf8575.stop()
-            tvDebug.stop()
-            bCanGoIdle := TRUE
-        DC_START:
-            debug("TSK: cmd start")
-            ' init each sensor
-            repeat tofIdx from 0 to 4 - 1
-                bDvcPresent := tofSensor[tofIdx].activateSensor()
-                if not bDvcPresent
-                    rptDriverFault(ERR_INIT_FAIL)
-                    quit
-                elseif tofIdx == 4 - 1
-                    bCanGoIdle := TRUE
-                else
-                    waitms(10) ' delay to next start
-                ' read settings for display
-            loadSettings()
-
-        DC_ENABLE_RANGING:
-            debug("TSK: cmd enbl ranging")
-            ' start just TOF #1
-            eDvcStatus := tofSensor[0].startRanging()
-            if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-                rptDriverFault(ERR_DVC_CMD_FAIL)
-            else
-                bCanGoIdle := TRUE
-            ' for the moment just turn on TOF1
-            {
-            repeat tofIdx from 0 to 4 - 1
-                eDvcStatus := tofSensor[tofIdx].startRanging()
-                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-                    rptDriverFault(ERR_DVC_CMD_FAIL)
-                    quit
-                elseif tofIdx == 4 - 1
-                    bCanGoIdle := TRUE
-                else
-                    waitms(10) ' delay to next start
-            '}
-        DC_DISABLE_RANGING:
-            debug("TSK: cmd dsbl ranging")
-            repeat tofIdx from 0 to 4 - 1
-                eDvcStatus := tofSensor[tofIdx].stopRanging()
-                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
-                    rptDriverFault(ERR_DVC_CMD_FAIL)
-                    quit
-                elseif tofIdx == 4 - 1
-                    bCanGoIdle := TRUE
-                else
-                    waitms(10) ' delay to next start
-
-        DC_SET_PARM:
-            debug("TSK: cmd set param")
-            ' init each sensor
-            repeat tofIdx from 0 to 4 - 1
-                bOK := handleSetupChange(tofIdx, arg, argValue)
-                if not bOK
-                    rptDriverFault(ERR_SET_PARAM_FAIL)
-                    quit
-                elseif tofIdx == 4 - 1
-                    bCanGoIdle := TRUE
-                else
-                    waitms(10) ' delay to next start
-
-        DC_GET_PARM:
-            debug("TSK: cmd get param")
-            tofIdx := 0 ' let's query only 0 for now...
-            bOK, newValue := handleSetupQuery(tofIdx, arg)
-            if not bOK
-                rptDriverFault(ERR_GET_PARAM_FAIL)
-            else
-                LONG[parmPtrArgValue] := newValue
-                bCanGoIdle := TRUE
-
-        other:
-            debug("TSK: ERROR (cmd) unk cmd enum ", uhex_(newCommand))
-            rptDriverFault(ERR_CMD_UNKNOWN)
-
-    ' if we are allowed to ACK command, do so
-    if bCanGoIdle
-        ' indicate we are done processing command
-        ackDriverCommand()
-
-PRI ackDriverCommand()
-    ' indicate we are done processing command
-    long[parmPtrResponse] := RSP_OK
-    long[parmPtrCmd] := DC_IDLE
-
-PRI rptDriverFault(faultValue)
-    ' indicate we ended with fault and set identifying value
-    long[parmPtrArgValue] := faultValue
-    if LONG[parmPtrResponse] == RSP_PROCESSING_CMD ' it could already be "bad parm id"
-        long[parmPtrResponse] := RSP_ERROR  ' general error if  NOT already a value
-    long[parmPtrCmd] := DC_IDLE
 
 PRI gatherInterruptInfo() : bfoundSomeReady | nRawInts, nBit, bitMask, tofIdx, BYTE newBit, BYTE oldBit
 ' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
@@ -655,7 +644,7 @@ PRI handleSetupChange(nTofIdx, arg, argValue) : ok | eDvcStatus
         other:
             debug("TSK: ERROR (set) unk PID_ enum ", uhex_(arg))
             ok := FALSE
-            LONG[parmPtrResponse] := RSP_BAD_PARAM_ID
+            LONG[@dvrResponse] := RSP_BAD_PARAM_ID
 
     if ok == TRUE
         ' still good condition our response
@@ -683,7 +672,7 @@ PRI handleSetupQuery(nTofIdx, parmId) : ok, parmValue | eDvcStatus, valueRead
         other:
             debug("TSK: ERROR (get) unk PID_ enum ", uhex_(parmId))
             ok := FALSE
-            LONG[parmPtrResponse] := RSP_BAD_PARAM_ID
+            LONG[@dvrResponse] := RSP_BAD_PARAM_ID
 
     if ok == TRUE
         'debug("TSK:   (DBG) ", udec(eDvcStatus), udec(parmValue))
@@ -692,21 +681,12 @@ PRI handleSetupQuery(nTofIdx, parmId) : ok, parmValue | eDvcStatus, valueRead
         else
             parmValue := valueRead
 
-DAT { TASK Data }
-
-    drvrCommand     LONG    0
-    drvrArg         LONG    0
-
-    parmPtrCmd          LONG    0
-    parmPtrArg          LONG    0
-    parmPtrArgValue     LONG    0
-    parmPtrResponse     LONG    0
 
 CON { --- HDMI Debug Support --- }
 
 CON { Constants for HDMI Debug }
 
-    DBG_GROUPS_CT = 1
+    DBG_GROUPS_CT = 2
     DBG_MAX_VARS_IN_GROUP = 7
 
 VAR { * Data Structure for HDMI Debug * }
@@ -732,6 +712,13 @@ DAT { Literals for HDMI Debug }
 nextAddr1
     dataLen1     LONG    @nextAddr1 - @nameTitle1
 
+    nameTitle2  BYTE    "Driver I/F",0
+    name20      BYTE    "Cmd",0
+    name21      BYTE    "Param",0
+    name22      BYTE    "Value",0
+    name23      BYTE    "Response",0
+nextAddr2
+    dataLen2     LONG    @nextAddr2 - @nameTitle2
 
 PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
 ' do internal one-time setup of driver debug data
@@ -756,22 +743,37 @@ PRI loadDisplayList() | nGrpOffset, nValsGrpOffset, nVarsInGroup
     LONG[@pValsAr][nValsGrpOffset + 5] := @targetOrder
     LONG[@pValsAr][nValsGrpOffset + 6] := @resolution
 
+    nGrpOffset := 1
+    nVarsInGroup := 4
+    LONG[@pTitlesAr][nGrpOffset] := @nameTitle2
+    LONG[@pVarCtAr][nGrpOffset] := nVarsInGroup
+    ' populate the empty name/value ptr tables
+    nValsGrpOffset := nGrpOffset * DBG_MAX_VARS_IN_GROUP
+    LONG[@pNamesAr][nValsGrpOffset + 0] := @name20
+    LONG[@pNamesAr][nValsGrpOffset + 1] := @name21
+    LONG[@pNamesAr][nValsGrpOffset + 2] := @name22
+    LONG[@pNamesAr][nValsGrpOffset + 3] := @name23
+    LONG[@pValsAr][nValsGrpOffset + 0] := @dvrCommand
+    LONG[@pValsAr][nValsGrpOffset + 1] := @dvrParameter
+    LONG[@pValsAr][nValsGrpOffset + 2] := @dvrParamValue
+    LONG[@pValsAr][nValsGrpOffset + 3] := @dvrResponse
+
     ' reset unused
     unused0 := 0
     unused1 := 0
 
     ' tell our table size to reader
-    nGrpOffset := 1
+    nGrpOffset := 2
     LONG[@pTitlesAr][nGrpOffset] := DBG_MAX_VARS_IN_GROUP
 
 PUB getDebugData() : nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars | tmpAbsPtr
 '' Return pointers to HDMI-debug data structures for this motor-object instance
     loadDisplayList()
     nGroups := DBG_GROUPS_CT
-    pGroupTitles := @pTitlesAr         ' pStr := long[pTitlesAr][grpIdx]
-    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars := long[pVarCtAr][grpIdx]
-    pGroupNames := @pNamesAr           ' pGrpNameAr := long[pNamesAr][grpIdx], pVarName := long[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
-    pGroupVars := @pValsAr             ' pGrpLongVar := long[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupTitles := @pTitlesAr         ' pStr := LONG[pTitlesAr][grpIdx]
+    pGroupVarCts := @pVarCtAr          ' nNbrGrpVars := LONG[pVarCtAr][grpIdx]
+    pGroupNames := @pNamesAr           ' pGrpNameAr := LONG[pNamesAr][grpIdx], pVarName := LONG[pNameAr][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
+    pGroupVars := @pValsAr             ' pGrpLongVar := LONG[pValsAr][grpIdx][varIdx]  where varIdx is from 0 to nNbrGrpVars - 1
 
 VAR { captured sensor data }
 

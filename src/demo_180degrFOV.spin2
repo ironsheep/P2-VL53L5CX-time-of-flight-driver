@@ -73,7 +73,7 @@ VAR
 
 CON { -------------- MAIN -------------- }
 
-PUB main()
+PUB main() | drvrResponse
     '' Main entry point of 180° Field of View demo
 
     debug("* Setting up")
@@ -91,22 +91,23 @@ PUB main()
 
     debug("* Configure Sensors")
     ' Set Sensor configuration
-    tofSensor.setParameter(tofSensor.PID_RESOLUTION, tofSensor.VL53L5CX_RESOLUTION_8X8)
+    drvrResponse := tofSensor.setParameter(tofSensor.PID_RESOLUTION, tofSensor.VL53L5CX_RESOLUTION_8X8)
+    ' if configure went OK
+    if drvrResponse == tofSensor.DRVR_CMD_OK
 
-    waitHereForever()
+        debug("* Let's range!")
+        ' let's start ranging!
+        drvrResponse := tofSensor.enableSensing(TRUE)
 
+        waitHereForever()
 
-    ' let's start ranging!
-    tofSensor.enableSensing(TRUE)
+        ' run for 2 minutes
+        waitms(5 * 1000)   ' test 5 sec only
+        waitms(2 * 60 * 1000)   ' 2 * 1 minute (60 * 1000mSec)
 
-
-    waitHereForever()
-
-    ' run for 2 minutes
-    waitms(2 * 60 * 1000)   ' 2 * 1 minute (60 * 1000mSec)
-
-    ' let's stop ranging!
-    tofSensor.enableSensing(FALSE)
+        debug("* Stop ranging")
+        ' let's stop ranging!
+        tofSensor.enableSensing(FALSE)
 
 
     debug("* DONE")
