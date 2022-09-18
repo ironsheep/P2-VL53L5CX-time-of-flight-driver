@@ -212,7 +212,7 @@ PRI waitCommandComplete() : nResponse | bError, bTimedOut
         bError := TRUE
         debug("  -- EEEE driver reports fault: ", uhex_(dvrParamValue))
 
-    if not bTimedOut
+    if bTimedOut
         nResponse := DRVR_DIDNT_RESPOND
     elseif not bError
         if dvrResponse == RSP_OK
@@ -344,7 +344,7 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
             debug("TSK: cmd enbl ranging")
             repeat tofIdx from 0 to lastSensor
                 eDvcStatus := tofSensor[tofIdx].startRanging()
-                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
                     rptDriverFault(ERR_DVC_CMD_FAIL)
                     quit
                 elseif tofIdx == lastSensor
@@ -356,7 +356,7 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
             debug("TSK: cmd dsbl ranging")
             repeat tofIdx from 0 to lastSensor
                 eDvcStatus := tofSensor[tofIdx].stopRanging()
-                if not eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
+                if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
                     rptDriverFault(ERR_DVC_CMD_FAIL)
                     quit
                 elseif tofIdx == lastSensor
