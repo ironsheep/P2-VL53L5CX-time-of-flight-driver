@@ -9,8 +9,8 @@ Turning on the DIY Robotic Sensor w/180° Field of View using 4x VL53L5CX TOF Se
 
 On this Page:
 
-- [Prototype Hardware]()
-- [Images - Communications Validation with LA]()
+- [Prototype Hardware](#the-prototype-sensor-hardware)
+- [Images - Communications Validation with LA](#logic-analyzers-view-of-chatting-with-the-sensors)
 
 Additional pages:
 
@@ -33,27 +33,27 @@ As I do when working with any new device I probe the control and status lines of
 
 ### Runtime Configuration 
 
-While I have direct I2C communication with the 4 sensors their control lines are driven by the PCF8575 I/O Expander. So, first we have to configure it and then tell it how to condition its output port bits to enable the 4 sensors. Each of our 4 sensors start up at exactly the same I2C address so then we need to move the devices to their own I2C addreses so we can address each individually.
+While I have direct I2C communication with the 4 sensors their control lines are driven by the PCF8575 I/O Expander. So, first we have to configure it and then tell it how to condition its output port bits to enable the 4 sensors. Each of our 4 sensors start up at exactly the same I2C address so then we need to move the devices to their own I2C addreses so we can interact with each individually.
 
 After much code creation and testing here's the proof of this configuration happening:
 
 <p align="center">
   <img src="../../Images/Sensor180TOF-Startup.png" width="800"><br>
-  <B>Here you see the PCF8575 being configured then being used to select the individual sensors so they can have unique I2C bus addresses assigned to each.</B>
+  <B>Here you see the PCF8575 being configured then being used to select the individual sensors so</br>they can each have their own unique I2C bus address.</B>
 </p>
 
-Whew! So far so good.  Now each of these sensors needs about 80k of code loaded so now that we can talk to each of them we then load the code. After each is loaded we can then talk to the now running code so the first thing we do is query the first sensor for its default configuration values.  This tells us how each is currently set up.
+Whew! So far so good.  Now each of these sensors needs about 80k of code loaded so now that we can talk to each of them, we load their code. After each is loaded, we can then talk to the now running code. The first thing we do is query the first sensor for its default configuration values.  This tells us how each is currently set up (since they were all loaded with the same code.
 
-Next we need to send reconfigure the sensors so we can start them all ranging.
+Next we need to reconfigure the sensors so we can start them all ranging in the mode that we wish to use.
 
 Here's the proof that this is all happening as expected:
 
 <p align="center">
   <img src="../../Images/Sensor180TOF-Loading.png" width="800"><br>
-  <B>After we can address teh 4 sensors we can now load firsmware into each and then configured desired ranging settings we want to use.<BR>Just before configuraing the sensors we query one of them to get all 6 defaut configuration values.</B>
+  <B>After we can address the 4 sensors we can now load firmware into each and then configure the ranging settings we </BR>want to use. Just before configuring the sensors, we query one of them to get all 6 default configuration values.</B>
 </p>
 
-Ok know you know where I am, the progress I've made. I'm next working on the code to get each to start ranging and then to stop ranging.  Afterwhich I can then work on unloading their sensed data.
+Ok know you know where I am, the progress I've made. I'm next working on the code to get each to start ranging and then to stop ranging.  Afterwhich I will work on unloading their sensed data.
 
 So... watch this space...   ;-)
 

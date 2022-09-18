@@ -9,8 +9,8 @@ Initial design for DIY Robotic Sensor w/180° Field of View using 4x VL53L5CX TO
 
 On this Page:
 
-- [Electrical Design]()
-- [Initial 3D Design for mounting bracked]()
+- [Electrical Design](#design-files-for-tof-sensor-w180-field-of-view)
+- [Initial 3D Design for mounting bracked](#bracket-for-holding-4-tof-sensors)
 
 Additional pages:
 
