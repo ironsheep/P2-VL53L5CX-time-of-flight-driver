@@ -97,15 +97,16 @@ PUB main() | drvrResponse
 
         debug("* Let's range!")
         ' let's start ranging!
-        drvrResponse := tofSensor.enableSensing(TRUE)
+        drvrResponse := tofSensor.enableRanging(TRUE)
 
         ' run for 2 minutes
         waitms(5 * 1000)   ' test 5 sec only
         'waitms(2 * 60 * 1000)   ' 2 * 1 minute (60 * 1000mSec)
 
-        debug("* Stop ranging")
-        ' let's stop ranging!
-        tofSensor.enableSensing(FALSE)
+        if tofSensor.isRanging()
+            debug("* Stop ranging")
+            ' let's stop ranging!
+            tofSensor.enableRanging(FALSE)
     else
         debug("* ERROR Range start failed!")
 

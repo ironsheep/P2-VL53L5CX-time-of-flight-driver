@@ -75,9 +75,12 @@ CON { basic constants }
     VL53L5CX_RESOLUTION_8X8         = tofSensor.VL53L5CX_RESOLUTION_8X8
 
 
-    VALUE_NOT_SET = (-1)
+    VALUE_NOT_SET           = (-1)
+    NBR_VL53L5CX_SENSORS    = 4
+    FIRST_SENSOR_IDX    = 0
+    LAST_SENSOR_IDX    = NBR_VL53L5CX_SENSORS - 1
 
-    STACK_SIZE_LONGS = 128  ' was 64
+    STACK_SIZE_LONGS        = 128  ' was 64
 
 DAT { run-time condition vars }
 
@@ -86,7 +89,6 @@ DAT { run-time condition vars }
 
     currentResolution   LONG    VALUE_NOT_SET
     currentImageWidth   LONG    VALUE_NOT_SET
-
 
 OBJ { our sensors }
 
@@ -184,11 +186,17 @@ PUB getParameter(nParmId) : nResponse, nParmValue | bError, bTimedOut
     if nResponse == DRVR_CMD_OK
         nParmValue := dvrResponse
 
-PUB enableSensing(bEnable) : nResponse | bError, bTimedOut  ' turn sensing on/off
+PUB enableRanging(bEnable) : nResponse | bError, bTimedOut  ' turn sensing on/off
 '' Enable(TRUE) or Disable(false) ranging
     dvrCommand := (bEnable) ? DC_ENABLE_RANGING : DC_DISABLE_RANGING
     ' wait for command to complete
     nResponse := waitCommandComplete()
+
+PUB isRanging() : bRangingStatus
+'' Return T/F where T means one or more sensors are ranging
+''  (hopefully, all four since we run them as a set! ;-)
+    bRangingStatus := drvrIsRanging
+
 
 CON ' -------------- PRIVATE (Utility) Methods --------------
 
@@ -235,12 +243,14 @@ DAT { debug display data }
     screenTitle     BYTE    "-- 180° Field of View Sensor Debug --", 0
 
     dvrCommand      LONG    DC_UNKNOWN
-    dvrParameter      LONG    0
-    dvrResponse    LONG    0
-    dvrParamValue    LONG    0
+    dvrParameter    LONG    0
+    dvrResponse     LONG    0
+    dvrParamValue   LONG    0
     taskStack       LONG    0[STACK_SIZE_LONGS]
 
-    priorRawInts    LONG    0
+    priorRawIntBits    WORD    $0F00   ' preset to no interrupt on 8-11
+
+    drvrIsRanging   BYTE    FALSE
 
     bDevicePreset   BYTE    FALSE
     bDataAvail      BYTE    FALSE
@@ -249,7 +259,7 @@ DAT { debug display data }
 
 
 
-PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand
+PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand, bDataReady, timeNow, timeToProcessCommand
     'repeat  ' stop here !!!
 
     Debug("TSK: Starting...")
@@ -292,27 +302,41 @@ PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand
         LONG[@dvrResponse] := RSP_UNKNOWN
         LONG[@dvrCommand] := DC_IDLE
 
+        ' check for command every 25mS
+        timeToProcessCommand := getms() + 25
+
         repeat
-            newCommand := LONG[@dvrCommand]
 
-            ' if legit command arrived...
-            if newCommand <> DC_IDLE and newCommand <> DC_UNKNOWN
-                ' while we dispatch
-                LONG[@dvrResponse] := RSP_UNKNOWN
-                LONG[@dvrCommand] := DC_UNKNOWN
-                handleDriverCommand(newCommand)
+            if timeToProcessCommand < getms()
+                newCommand := LONG[@dvrCommand]
 
-            'checkAndDoUnloadsPollingTOFs()
+                ' if legit command arrived...
+                if newCommand <> DC_IDLE and newCommand <> DC_UNKNOWN
+                    ' while we dispatch
+                    LONG[@dvrResponse] := RSP_UNKNOWN
+                    LONG[@dvrCommand] := DC_UNKNOWN
+                    handleDriverCommand(newCommand)
 
-            waitms(250)    ' idle for 1/4 sec.
+                ' check for command every 25mS
+                timeToProcessCommand := getms() + 25
+'{
+            elseif drvrIsRanging
+                if pcf8575.isIntPending()
+                    bDataReady := gatherInterruptInfo()
+                    if bDataReady
+                        doPendingUnloads()
+                else
+                    waitus(10)  ' just a tiny wait time INTb will be low for only 100uS!
+'}
+            else
+                waitus(250)  ' longer delay since we need a command to start the ranging
 
 
-PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK, newParam, paramValue, newValue, lastSensor
+PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK, newParam, paramValue, newValue
     bCanGoIdle := FALSE
     debug("TSK: Handling ", udec(newCommand))
     LONG[@dvrResponse] := RSP_PROCESSING_CMD
 
-    lastSensor := 4 - 1
     newParam := LONG[@dvrParameter]
     paramValue := LONG[@dvrParamValue]
     debug("TSK: hndl cmd ", udec(newParam), udec(paramValue))
@@ -320,7 +344,7 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
         DC_STOP:
             debug("TSK: cmd stop")
             ' stop our back-end comms
-            repeat tofIdx from 0 to lastSensor
+            repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
                 tofSensor[tofIdx].stop()
             pcf8575.stop()
             tvDebug.stop()
@@ -328,12 +352,12 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
         DC_START:
             debug("TSK: cmd start")
             ' init each sensor
-            repeat tofIdx from 0 to lastSensor
+            repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
                 bDvcPresent := tofSensor[tofIdx].activateSensor()
                 if not bDvcPresent
                     rptDriverFault(ERR_INIT_FAIL)
                     quit
-                elseif tofIdx == lastSensor
+                elseif tofIdx == LAST_SENSOR_IDX
                     bCanGoIdle := TRUE
                 else
                     waitms(10) ' delay to next start
@@ -342,37 +366,39 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
 
         DC_ENABLE_RANGING:
             debug("TSK: cmd enbl ranging")
-            repeat tofIdx from 0 to lastSensor
+            repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
                 eDvcStatus := tofSensor[tofIdx].startRanging()
                 if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
                     rptDriverFault(ERR_DVC_CMD_FAIL)
                     quit
-                elseif tofIdx == lastSensor
+                elseif tofIdx == LAST_SENSOR_IDX
                     bCanGoIdle := TRUE
+                    drvrIsRanging := TRUE
                 else
                     waitms(10) ' delay to next start
 
         DC_DISABLE_RANGING:
             debug("TSK: cmd dsbl ranging")
-            repeat tofIdx from 0 to lastSensor
+            repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
                 eDvcStatus := tofSensor[tofIdx].stopRanging()
                 if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
                     rptDriverFault(ERR_DVC_CMD_FAIL)
                     quit
-                elseif tofIdx == lastSensor
+                elseif tofIdx == LAST_SENSOR_IDX
                     bCanGoIdle := TRUE
+                    drvrIsRanging := FALSE
                 else
                     waitms(10) ' delay to next start
 
         DC_SET_PARM:
             debug("TSK: cmd set param")
             ' init each sensor
-            repeat tofIdx from 0 to lastSensor
+            repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
                 bOK := handleSetupChange(tofIdx, newParam, paramValue)
                 if not bOK
                     rptDriverFault(ERR_SET_PARAM_FAIL)
                     quit
-                elseif tofIdx == lastSensor
+                elseif tofIdx == LAST_SENSOR_IDX
                     bCanGoIdle := TRUE
                 else
                     waitms(10) ' delay to next start
@@ -411,6 +437,7 @@ PRI rptDriverFault(faultValue)
     debug("TSK:  -- ERR")
 
 
+{
 PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSensorRanging, bDataReturned
     ' poll our TOF devices for data ready
     bfoundSomeReady := FALSE
@@ -426,8 +453,7 @@ PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSenso
                 debug("TSK: error unloading data, TOF #1")
 
    ' for each of our TOFs
-{
-    repeat tofIdx from 0 to 4 - 1
+    repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
         ' if sensor has started ranging...
         bSensorRanging := tofSensor[tofIdx].isRanging()
         if bSensorRanging
@@ -440,7 +466,7 @@ PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSenso
 
     if bfoundSomeReady
         ' we have at lest one data ready, let's do unloads
-        repeat tofIdx from 0 to 4 - 1
+        repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
             if BYTE[@bIntPending][tofIdx] == TRUE
                 _, bDataReturned := tofSensor[tofIdx].unloadRangingData()
                 if not bDataReturned
@@ -448,27 +474,6 @@ PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSenso
                 BYTE[@bIntPending][tofIdx] := FALSE
 '}
 
-
-PRI gatherInterruptInfo() : bfoundSomeReady | nRawInts, nBit, bitMask, tofIdx, BYTE newBit, BYTE oldBit
-' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
-'  our TOF sensor transition high-to-low is what we are looking for..
-'   we need to ignore the low-to-high changes
-    bfoundSomeReady := FALSE
-    if pcf8575.isIntPending()
-        nRawInts := pcf8575.getInputBits()    ' a read clears pending interrupts
-        if priorRawInts <> nRawInts
-            ' INTb bits for our 4 TOF sensors 1-4 [LPn bits of Expander are 8-11]
-            repeat nBit from 8 to 11
-                tofIdx := nBit - 8   ' now [0-3]
-                bitMask := 1 << nbit
-                oldBit :=  priorRawInts & bitMask
-                newBit :=  nRawInts & bitMask
-                ' if the bit changed and it's high to low
-                BYTE[@bIntPending][tofIdx] := (newBit <> oldBit and newBit == 0) ? TRUE : FALSE
-                if BYTE[@bIntPending][tofIdx]
-                    bfoundSomeReady := TRUE
-            ' set new prior
-            priorRawInts := nRawInts
 
 PRI loadSettings() | eDvcStatus, readValue
 
@@ -501,32 +506,51 @@ PRI loadSettings() | eDvcStatus, readValue
         resolution := readValue
 
 
-{
-PRI checkAndDoUnloadsUsingINT()
+PRI doPendingUnloads() | tofIdx
     ' process interupt pin values
-    bDataAvail := gatherInterruptInfo()
-    if bDataAvail
-        unloadData()
+    if drvrIsRanging
+        repeat  tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
+            ' if interrupt is pending for this sensor let's unload it
+            if BYTE[@bIntPending][tofIdx]
+                ' YES unload data
+                tofSensor[tofIdx].unloadRangingData()
+                ' reset our pending flag
+                BYTE[@bIntPending][tofIdx] := FALSE
 
+PRI gatherInterruptInfo() : bfoundSomeReady | currRawIntBits, nBit, bitMask, tofIdx, WORD newBit, WORD oldBit, bInterrupt, a, b
+' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
+'  our TOF sensor transition high-to-low is what we are looking for..
+'   we need to ignore the low-to-high changes
+    bfoundSomeReady := FALSE
+    if pcf8575.isIntPending()
+        currRawIntBits := pcf8575.getInputBits()    ' a read clears pending interrupts
+        if priorRawIntBits <> currRawIntBits
+            'debug("TSK: ints old=", ubin_word_(priorRawIntBits), ", new=", ubin_word_(currRawIntBits))
+            if currRawIntBits <> $0F00
+                ' INTb bits for our 4 TOF sensors 1-4 [LPn bits of Expander are 8-11]
+                repeat nBit from 8 to 11
+                    tofIdx := nBit - 8   ' now [0-3]
+                    bitMask := 1 << nBit ' shifted to 8-11
+                    oldBit :=  priorRawIntBits & bitMask
+                    newBit :=  currRawIntBits & bitMask
+                    ' if the bit changed and it's high to low
+                    bInterrupt := (newBit == 0 and newBit <> oldBit) ? TRUE : FALSE
+                    'debug(" INT: b", uhex_(nBit), " msk=", ubin_word_(bitMask), " ", udec(oldBit), udec(newBit), sdec(bInterrupt))
+                    BYTE[@bIntPending][tofIdx] := bInterrupt
+                    if bInterrupt
+                        'debug("TSK: #", udec_(tofIdx+1), " data rdy!")
+                        bfoundSomeReady := TRUE
+            ' set new prior
+            priorRawIntBits := currRawIntBits
 
-PRI unloadData() | tofIdx
-    repeat  tofIdx from 0 to 4 - 1
-        ' if interrupt is pending for this sensor let's unload it
-        if BYTE[@bIntPending][tofIdx]
-            ' YES unload data
-            tofSensor[tofIdx].unloadRangingData()
-            ' reset our pending flag
-            BYTE[@bIntPending][tofIdx] := FALSE
-'}
 
 PRI configureVideoDisplays() | tofIdx, pTgtStatus8, pSmplDistanceMM16
     ' let's hand off data area pointers to our video subsystem
-    'repeat  tofIdx from 0 to 4 - 1
-    'if tofSensor[0].isRanging()
-    tofIdx := 0
-    pTgtStatus8, pSmplDistanceMM16 := tofSensor[tofIdx].targetBufferPointers()
-    debug("* set video #", udec_(tofIdx+1), ", ImgWdth: ", udec_(currentImageWidth))
-    tvDebug.registerTofDataSet(tofIdx, currentImageWidth, pTgtStatus8, pSmplDistanceMM16)
+    repeat  tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
+        if tofSensor[0].isRanging()
+        pTgtStatus8, pSmplDistanceMM16 := tofSensor[tofIdx].targetBufferPointers()
+        debug("* set video #", udec_(tofIdx+1), ", ImgWdth: ", udec_(currentImageWidth))
+        tvDebug.registerTofDataSet(tofIdx, currentImageWidth, pTgtStatus8, pSmplDistanceMM16)
 
 DAT
     '                    TOF #   1    2    3    4
