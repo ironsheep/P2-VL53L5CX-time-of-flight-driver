@@ -248,14 +248,14 @@ DAT { debug display data }
     dvrParamValue   LONG    0
     taskStack       LONG    0[STACK_SIZE_LONGS]
 
-    priorRawIntBits    WORD    $0F00   ' preset to no interrupt on 8-11
 
     drvrIsRanging   BYTE    FALSE
 
     bDevicePreset   BYTE    FALSE
     bDataAvail      BYTE    FALSE
 
-    bIntPending     BYTE    FALSE[4]
+    priorRawIntBits     WORD    $0F00   ' preset to no interrupt on 8-11
+    bIntPending         LONG    0           ' now using bit flags
 
 
 
@@ -437,44 +437,6 @@ PRI rptDriverFault(faultValue)
     debug("TSK:  -- ERR")
 
 
-{
-PRI checkAndDoUnloadsPollingTOFs() | tofIdx, bDataReady, bfoundSomeReady, bSensorRanging, bDataReturned
-    ' poll our TOF devices for data ready
-    bfoundSomeReady := FALSE
-     ' for just our 1st TOF
-    ' if sensor has started ranging...
-    bSensorRanging := tofSensor[0].isRanging()
-    if bSensorRanging
-        ' see if data ready...
-        _, bDataReady  := tofSensor[0].isDataReadyToUnload()
-        if bDataReady
-            _, bDataReturned := tofSensor[0].unloadRangingData()
-            if not bDataReturned
-                debug("TSK: error unloading data, TOF #1")
-
-   ' for each of our TOFs
-    repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
-        ' if sensor has started ranging...
-        bSensorRanging := tofSensor[tofIdx].isRanging()
-        if bSensorRanging
-            ' see if data ready...
-            _, bDataReady  := tofSensor[tofIdx].isDataReadyToUnload()
-            ' mark interrupt occurred flag if ready, else clear it
-            BYTE[@bIntPending][tofIdx] := (bDataReady) ? TRUE : FALSE
-            if BYTE[@bIntPending][tofIdx]
-                bfoundSomeReady := TRUE
-
-    if bfoundSomeReady
-        ' we have at lest one data ready, let's do unloads
-        repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
-            if BYTE[@bIntPending][tofIdx] == TRUE
-                _, bDataReturned := tofSensor[tofIdx].unloadRangingData()
-                if not bDataReturned
-                    debug("TSK: error unloading data, TOF #", udec_(tofIdx+1))
-                BYTE[@bIntPending][tofIdx] := FALSE
-'}
-
-
 PRI loadSettings() | eDvcStatus, readValue
 
     eDvcStatus, readValue := tofSensor[0].getRangingFrequencyHz()
@@ -506,22 +468,23 @@ PRI loadSettings() | eDvcStatus, readValue
         resolution := readValue
 
 
-PRI doPendingUnloads() | tofIdx
+PRI doPendingUnloads() | tofIdx, bitsCopy, loadMask
     ' process interupt pin values
     if drvrIsRanging
-        repeat  tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
+        bitsCopy := bIntPending
+        bIntPending := 0    ' clear so more can be recorded
+        repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
+            loadMask := 1 << tofIdx
             ' if interrupt is pending for this sensor let's unload it
-            if BYTE[@bIntPending][tofIdx]
+            if bitsCopy & loadMask <> 0
                 ' YES unload data
                 tofSensor[tofIdx].unloadRangingData()
-                ' reset our pending flag
-                BYTE[@bIntPending][tofIdx] := FALSE
 
-PRI gatherInterruptInfo() : bfoundSomeReady | currRawIntBits, nBit, bitMask, tofIdx, WORD newBit, WORD oldBit, bInterrupt, a, b
+PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, nBit, bitMask, tofIdx, WORD newBit, WORD oldBit, bInterrupt, loadMask
 ' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
 '  our TOF sensor transition high-to-low is what we are looking for..
 '   we need to ignore the low-to-high changes
-    bfoundSomeReady := FALSE
+    bfoundAllReady := FALSE
     if pcf8575.isIntPending()
         currRawIntBits := pcf8575.getInputBits()    ' a read clears pending interrupts
         if priorRawIntBits <> currRawIntBits
@@ -531,15 +494,19 @@ PRI gatherInterruptInfo() : bfoundSomeReady | currRawIntBits, nBit, bitMask, tof
                 repeat nBit from 8 to 11
                     tofIdx := nBit - 8   ' now [0-3]
                     bitMask := 1 << nBit ' shifted to 8-11
+                    loadMask := 1 << tofIdx
                     oldBit :=  priorRawIntBits & bitMask
                     newBit :=  currRawIntBits & bitMask
                     ' if the bit changed and it's high to low
                     bInterrupt := (newBit == 0 and newBit <> oldBit) ? TRUE : FALSE
                     'debug(" INT: b", uhex_(nBit), " msk=", ubin_word_(bitMask), " ", udec(oldBit), udec(newBit), sdec(bInterrupt))
-                    BYTE[@bIntPending][tofIdx] := bInterrupt
                     if bInterrupt
+                        bIntPending |= loadMask
+
+                    ' on arrival of our 4th sensor data, do unloads!
+                    if bInterrupt and tofIdx == LAST_SENSOR_IDX
                         'debug("TSK: #", udec_(tofIdx+1), " data rdy!")
-                        bfoundSomeReady := TRUE
+                        bfoundAllReady := TRUE
             ' set new prior
             priorRawIntBits := currRawIntBits
 
