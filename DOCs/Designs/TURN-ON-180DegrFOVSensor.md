@@ -50,10 +50,41 @@ Here's the proof that this is all happening as expected:
 
 <p align="center">
   <img src="../../Images/Sensor180TOF-Loading.png" width="800"><br>
-  <B>After we can address the 4 sensors we can now load firmware into each and then configure the ranging settings we </BR>want to use. Just before configuring the sensors, we query one of them to get all 6 default configuration values.</B>
+  <B>After we can address the 4 sensors we can now load firmware into each and then configure the ranging settings we</BR>want to use. Just before configuring the sensors, we query one of them to get all 6 default configuration values.</B>
 </p>
 
-Ok know you know where I am, the progress I've made. I'm next working on the code to get each to start ranging and then to stop ranging.  Afterwhich I will work on unloading their sensed data.
+Now since this is all about ranging let's get Ranging working:
+
+<p align="center">
+  <img src="../../Images/Sensor180TOF-Ranging.png" width="800"><br>
+  <B>Here we see the start and stop ranging commands working!</BR>Note the behavior of the 1st sensor when stopping.</B>
+</p>
+
+In this case the code sent the start ranging command, let it run for ~5 seconds and then sent the stop ranging command to each of them. You'll notice the stop-ranging has polling built in beause a sensor can take time to stop (as we see in the case of the first sensor as inicated in the image.).
+
+So, now that we know we can start and stop the sensors let's figure out unloading of data. We have two choices: (1) we can poll the devices to determine when each device has data to unload (*hmmm... this would be a lot of i2c bus traffic...*) or (2) we can unload when we are told we can by listening to the interrupts.  Ok, but how do our interrupts behave?
+
+It's time to adjust our Logic Analyzer setup again as we add probing of the interrupts pins...
+
+So, this was interesting... at first look, the interrupt signalling the LA saw didn't look right! I found some relavent hardware notes in the datasheets:
+
+1. VL53L5CX INTb (active low) is open-drain output (tristate) requiring a 47k ohm pullup resistor to IOVDD (3.3v)
+2.  PCF8575 INTb (active low) is also open-drain. (No mention of pullup requirement)
+
+It turns out that I had to add a 47k pull-up to the PCF8575 INTb pin to get stable values from the pin.  I updated the sensor schematic with the 5 47k pullup resistors (now r1.0) but it turns out the INTb lines from the VL53L5CX to the PCF8575 don't appear to need them. (*So mental note: if I build a board for this I'll leave the 4 TOF pullup pads in the layout but not initially populate them.  This way, if we later find they are useful, we can populate them*)
+
+With pull-up resistor added to the prototype, here's what I'm now seeing for the same command sequence: start ranging, wait for 5 secs, then stop ranging:
+
+<p align="center">
+  <img src="../../Images/Sensor180TOF-RangingINTs.png" width="800"><br>
+  <B>New instrumentation: now watching the INTb pins going into the PCF8575 (green traces) and the INTb pin coming out of the PCF857, into the P2 (red trace above the green ones.)</B>
+</p>
+
+The interrupts are working now, how are we going to have to respond to them? We see groups of 4 interrupts occurring about 1 second apart. This is our four sensors asked to range at once per second (at 1 Hz). They individually report as each comes ready and they are reporting in the same order that they were asked to start ranging. We also see that the VL53L5CX devices assert their interupt for only 100 uSec. We also see that the PCF8575 device is also only holding the interrupt present for the same amount of time.  So, we need a fast mechanism that will detect and then record the fact that a device has interrupted. This should run at a fast enough rate so that we don't miss interrupts when ranging at the highest frequency we want to support (device capabilities: 1-15 Hz at 8x8, 1-60Hz at 4x4.) My goal will be to measure what frequencies we can support in this configuration with the P2.
+
+### Watch this space
+
+Ok know you know where I am, the progress I've made. I'm next working on the interrupt handling code. This is a bit more challenging and fun as the interrupts are present for 100 uSec. from each device. I'm polling the INTb pin on the PCF8575 to reduce i2c traffic. Once we see an interrupt we have to quickly ask the PCF8575 which device it was as you can see, it too, is only showing the interrupt for the same 100 uSec.
 
 So... watch this space...   ;-)
 
