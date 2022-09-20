@@ -94,21 +94,29 @@ PUB main() | drvrResponse
     drvrResponse := tofSensor.setParameter(tofSensor.PID_RESOLUTION, tofSensor.VL53L5CX_RESOLUTION_8X8)
     ' if configure went OK
     if drvrResponse == tofSensor.DRVR_CMD_OK
+        drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 3)
+        ' if configure went OK
+        if drvrResponse == tofSensor.DRVR_CMD_OK
 
-        debug("* Let's range!")
-        ' let's start ranging!
-        drvrResponse := tofSensor.enableRanging(TRUE)
+            debug("* Let's range!")
+            ' let's start ranging!
+            drvrResponse := tofSensor.enableRanging(TRUE)
+            if drvrResponse == tofSensor.DRVR_CMD_OK
 
-        ' run for 2 minutes
-        waitms(5 * 1000)   ' test 5 sec only
-        'waitms(2 * 60 * 1000)   ' 2 * 1 minute (60 * 1000mSec)
+                ' run for 2 minutes
+                waitms(5 * 1000)   ' test 5 sec only
+                'waitms(2 * 60 * 1000)   ' 2 * 1 minute (60 * 1000mSec)
 
-        if tofSensor.isRanging()
-            debug("* Stop ranging")
-            ' let's stop ranging!
-            tofSensor.enableRanging(FALSE)
+                if tofSensor.isRanging()
+                    debug("* Stop ranging")
+                    ' let's stop ranging!
+                    tofSensor.enableRanging(FALSE)
+            else
+                debug("* ERROR start ranging failed!")
+        else
+            debug("* ERROR set freq failed!")
     else
-        debug("* ERROR Range start failed!")
+        debug("* ERROR set resolution failed!")
 
     debug("* DONE")
     tofSensor.stop()

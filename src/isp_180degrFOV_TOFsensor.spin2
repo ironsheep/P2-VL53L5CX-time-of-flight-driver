@@ -319,17 +319,16 @@ PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand, bDataReady, t
 
                 ' check for command every 25mS
                 timeToProcessCommand := getms() + 25
-'{
+
             elseif drvrIsRanging
                 if pcf8575.isIntPending()
                     bDataReady := gatherInterruptInfo()
                     if bDataReady
+                        gatherInterruptInfo()   ' process a 2nd time to clear PCF8575 of rising edge detect
                         doPendingUnloads()
-                else
-                    waitus(10)  ' just a tiny wait time INTb will be low for only 100uS!
-'}
+
             else
-                waitus(250)  ' longer delay since we need a command to start the ranging
+                waitms(125)  ' longer delay since we need a command to start the ranging
 
 
 PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatus, bOK, newParam, paramValue, newValue
@@ -509,6 +508,8 @@ PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, nBit, bitMask, tofI
                         bfoundAllReady := TRUE
             ' set new prior
             priorRawIntBits := currRawIntBits
+
+
 
 
 PRI configureVideoDisplays() | tofIdx, pTgtStatus8, pSmplDistanceMM16
