@@ -324,7 +324,10 @@ PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand, bDataReady, t
                 if pcf8575.isIntPending()
                     bDataReady := gatherInterruptInfo()
                     if bDataReady
-                        gatherInterruptInfo()   ' process a 2nd time to clear PCF8575 of rising edge detect
+                        gatherInterruptInfo()                   ' process a 2nd time to clear PCF8575 of rising edge detect
+                        bDataReady := gatherInterruptInfo()     ' if we get nother assert this close, ack it
+                        if bDataReady
+                            gatherInterruptInfo()               ' ... and 2nd time to clear PCF8575 of rising edge detect
                         doPendingUnloads()
 
             else
@@ -503,7 +506,8 @@ PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, nBit, bitMask, tofI
                         bIntPending |= loadMask
 
                     ' on arrival of our 4th sensor data, do unloads!
-                    if bInterrupt and tofIdx == LAST_SENSOR_IDX
+                    'if bInterrupt and tofIdx == LAST_SENSOR_IDX
+                    if bInterrupt and (bIntPending & $000f) == $000f
                         'debug("TSK: #", udec_(tofIdx+1), " data rdy!")
                         bfoundAllReady := TRUE
             ' set new prior

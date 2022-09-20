@@ -352,7 +352,7 @@ PUB setRangingFrequencyHz(newFrequency8) : eDvcStatus | bStatusNotOK, rngMin, rn
 ''   VL53L5CX_STATUS_INVALID_PARAM - then curr resolution is yet set or
 ''     Hz value if out of range for resolution
 ''   VL53L5CX_STATUS_ERROR - if there was an I2C communications error
-    debug("VL53: Set Ranging Freq Hz")
+    debug("VL53 #", udec_(instanceID), " Set Ranging Freq ", udec_(newFrequency8), " Hz")
 
     eDvcStatus := VL53L5CX_STATUS_OK
 
@@ -729,7 +729,7 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
 ''  Returns VL53L5CX_STATUS_OK if the start ranging command was acknowledged by the sensor or VL53L5CX_STATUS_ERROR otherwise.
     eDvcStatus := VL53L5CX_STATUS_OK
 
-    debugWithInstanceID(@" Start Ranging")
+    'debugWithInstanceID(@" Start Ranging")
 
         'init output enables
     long[@output_bh_enable][0] := $00000007  ' Enable mandatory output (meta and common data)
@@ -863,9 +863,9 @@ PUB startRanging() : eDvcStatus | nResolution8, i, bhType, bhIdx, bhSize, logica
         bSensorActive := TRUE
 
     if eDvcStatus == VL53L5CX_STATUS_OK
-        debug("  - #", udec_(instanceID), " Ranging Started")
+        debug("VL53 #", udec_(instanceID), " Ranging Started")
     else
-        debug("  - #", udec_(instanceID), " ERROR Ranging Didn't Start")
+        debug("VL53 #", udec_(instanceID), " ERROR Ranging Didn't Start")
 
 PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK, bStatusNotOK
 '' Stops the ranging session. It must be used when the sensor is streaming, after calling startRanging().
@@ -873,7 +873,7 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
     eDvcStatus := VL53L5CX_STATUS_OK
     bSensorActive := FALSE
 
-    debug("VL53: Stop Ranging")
+    'debug("VL53: Stop Ranging")
 
     ' status |= RdMulti(&(p_dev->platform), 0x2FFC, (uint8_t *)&auto_stop_flag, 4)
     bStatusNotOK := readBytes($2FFC, @auto_stop_flag, 4)
@@ -916,9 +916,9 @@ PUB stopRanging() : eDvcStatus | tmp, timeout, auto_stop_flag, bTempStatusNotOK,
         eDvcStatus := VL53L5CX_STATUS_ERROR
 
     if eDvcStatus == VL53L5CX_STATUS_OK
-        debug("  - Ranging Stopped")
+        debug("VL53 #", udec_(instanceID), " Ranging Stopped")
     else
-        debug("  - ERROR Ranging Didn't Stop")
+        debug("VL53 #", udec_(instanceID), " ERROR Ranging Didn't Stop")
 
 PUB isRanging() : bSensorRanging
 '' Return T/F where T means the sensor is actively ranging

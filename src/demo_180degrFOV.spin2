@@ -91,10 +91,10 @@ PUB main() | drvrResponse
 
     debug("* Configure Sensors")
     ' Set Sensor configuration
-    drvrResponse := tofSensor.setParameter(tofSensor.PID_RESOLUTION, tofSensor.VL53L5CX_RESOLUTION_8X8)
+    drvrResponse := tofSensor.setParameter(tofSensor.PID_RESOLUTION, tofSensor.VL53L5CX_RESOLUTION_4x4)
     ' if configure went OK
     if drvrResponse == tofSensor.DRVR_CMD_OK
-        drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 3)
+        drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 13)
         ' if configure went OK
         if drvrResponse == tofSensor.DRVR_CMD_OK
 
