@@ -230,7 +230,7 @@ PUB getInputBitsNTimes(pWordPointer, nWordCount) | bStatusOK, nWordIndex
     wordfill(pWordPointer, 0, nWordCount)                                    ' prefill w/zeros
 
     bStatusOK := readWords(pWordPointer, nWordCount)    ' get the value
-    'debug("*PCF: DBG reading from device: ", UHEX_WORD_ARRAY(pWordPointer, nWordCount))
+    'debug("*PCF: DBG reading from device: ", UHEX_WORD_ARRAY_(pWordPointer, nWordCount))
     repeat nWordIndex from 0 to nWordCount - 1
         WORD[pWordPointer][nWordIndex] &= !dirBits      ' mask off output bits
     if NOT bStatusOK
@@ -264,31 +264,40 @@ PUB isIntPending() : bPinState | rawPin
         'debug(`8575log ' * isIntPending() PinRaw=`(rawPin), state=`(bPinState)' 10)
 
 
-PUB readWord() : bStatusOK, result16 | ackbit
+PUB readWord() : bStatusOK, result16 | ackbit, WORD dvcResult16
 '' Read {result16}, all 16 port pin values, from device
 ''  returning both {bStatusOK} - T/F where TRUE = SUCCESS and
 ''  {result16} - the WORD value read from the device
     i2c_bus.start()
     ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
     bStatusOK |= ackbit
-    result16.byte[0] := i2c_bus.read(i2c_bus.ACK)
-    result16.byte[1] := i2c_bus.read(i2c_bus.NAK)
+    'result16.byte[0] := i2c_bus.read(i2c_bus.ACK)
+    'result16.byte[1] := i2c_bus.read(i2c_bus.NAK)
+    i2c_bus.rd_block(@dvcResult16, 2, i2c_bus.NAK)
 
     i2c_bus.stop()
+    result16.byte[0] := dvcResult16.byte[1]
+    result16.byte[1] := dvcResult16.byte[0]
     result16 := result16 signx 15   ' sign extend
+    'debug("*PCF: wds x1 ", ubin_word_(result16))
     'if bShowDebug
     '    term.fstr5(string("*PCF: readWord(0x%.02x) bStatusOK:%d, hi 0x%.02x, lo 0x%.02x, ret %d' 10), regAddr, bStatusOK, result16.byte[1], result16.byte[0], result16)
     'debug(" -rdWd: ", udec(bStatusOK), uhex_word(result16))
     bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
 
-PUB writeWord(dataValue16) : bStatusOK | ackbit
+'                       WRD0    WRD1
+' REAL: Read returned $95 $A1 $23 $4B
+' Expect Value of:    $4B $23 $A1 $95
+
+PUB writeWord(dataValue16) : bStatusOK | ackbit, BYTE sendBffr[3]
 '' Write {dataValue16} to our 16 port pins
 ''  returns {bStatusOK} - T/F where TRUE = SUCCESS
     i2c_bus.start()
-    bStatusOK := ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_WRITE)
-    ackBit := i2c_bus.write(dataValue16.byte[0])
-    bStatusOK |= ackbit
-    ackBit := i2c_bus.write(dataValue16.byte[1])
+    ' write block
+    BYTE[@sendBffr][0] := (dvcI2CAddr << 1) | MODE_WRITE
+    BYTE[@sendBffr][1] := dataValue16.byte[0]
+    BYTE[@sendBffr][2] := dataValue16.byte[1]
+    ackBit := i2c_bus.wr_block(@sendBffr, 3)
     bStatusOK |= ackbit
     i2c_bus.stop()
 
@@ -297,7 +306,7 @@ PUB writeWord(dataValue16) : bStatusOK | ackbit
     '    term.fstr3(string("*PCF: writeWord(0x%.02x)=0x%.04x bStatusOK:%d' 10), regAddr, dataValue16, bStatusOK)
     bStatusOK := (bStatusOK <> 0) ? FALSE : TRUE
 
-PUB readWords(pWordPointer, nWordCount) : bStatusOK | ackbit, wordIndex, endAckNak, result16
+PUB readWords(pWordPointer, nWordCount) : bStatusOK | ackbit, wordIndex, result16
 '' Read all 16 port pin values from device {nWordCount} times consecutively,
 ''  all 16 port pin values, from device - placing them into WORD array located at {pWordPointer}
 ''  returns {bStatusOK} - T/F where TRUE = SUCCESS
@@ -306,12 +315,12 @@ PUB readWords(pWordPointer, nWordCount) : bStatusOK | ackbit, wordIndex, endAckN
     i2c_bus.start()
     ackBit := i2c_bus.write((dvcI2CAddr << 1) | MODE_READ)
     bStatusOK |= ackbit
+    i2c_bus.rd_block(pWordPointer, nWordCount * 2, i2c_bus.NAK)
+
+    ' and flip from device order
     repeat wordIndex from 0 to nWordCount - 1
-        endAckNak := (wordIndex == nWordCount - 1) ? i2c_bus.NAK : i2c_bus.ACK
-        result16.byte[0] := i2c_bus.read(i2c_bus.ACK)
-        result16.byte[1] := i2c_bus.read(endAckNak)
-        result16 := result16 signx 15   ' sign extend
-        WORD [pWordPointer][wordIndex] := result16
+        result16 := WORD[pWordPointer][wordIndex]
+        WORD[pWordPointer][wordIndex] := result16.byte[0] | result16.byte[1] << 8
         'if bShowDebug
         '    term.fstr7(string(" -- readWords(0x%.02x) bStatusOK:%d, hi:0x%.02x, lo:0x%.02x, WORD[%d]ret 0x%.04x(%d)' 10), regAddr + (wordIndex * 2), bStatusOK, result16.byte[1], result16.byte[0], wordIndex, result16, result16)
     i2c_bus.stop()

@@ -324,10 +324,6 @@ PRI taskRun180FovSensor() | nbit, ok, nbrSensorsFound, newCommand, bDataReady, t
                 if pcf8575.isIntPending()
                     bDataReady := gatherInterruptInfo()
                     if bDataReady
-                        gatherInterruptInfo()                   ' process a 2nd time to clear PCF8575 of rising edge detect
-                        bDataReady := gatherInterruptInfo()     ' if we get nother assert this close, ack it
-                        if bDataReady
-                            gatherInterruptInfo()               ' ... and 2nd time to clear PCF8575 of rising edge detect
                         doPendingUnloads()
 
             else
@@ -482,39 +478,76 @@ PRI doPendingUnloads() | tofIdx, bitsCopy, loadMask
                 ' YES unload data
                 tofSensor[tofIdx].unloadRangingData()
 
-PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, nBit, bitMask, tofIdx, WORD newBit, WORD oldBit, bInterrupt, loadMask
+PRI getAndClearInterrupt(pResultWords, wordCount) : bHaveInt, edgesCount, bNeedClear | limitWordCount, srcWrdIdx, dstWrdIdx, WORD priorBits, WORD currRawIntBits[4]
+    ' have INTb assert? (low?)
+    bHaveInt := FALSE
+    limitWordCount := (wordCount <= 4) ? wordCount : 4
+    priorBits := $000f
+    dstWrdIdx := 0
+    bNeedClear := FALSE
+    wordfill(pResultWords, 0, wordCount)    ' pre-fill with zeros
+    if pcf8575.isIntPending()
+        pcf8575.getInputBitsNTimes(@currRawIntBits, limitWordCount)    ' a read clears pending interrupts
+        'debug("TSK: ints x3 ", ubin_word_array_(@currRawIntBits, limitWordCount))
+        repeat srcWrdIdx from 0 to limitWordCount - 1
+            if (WORD[@currRawIntBits][srcWrdIdx] & $000f) <> $000f
+                bHaveInt := TRUE
+                ' if last value is an interrupt then we need to be cleared
+                if srcWrdIdx == limitWordCount - 1
+                    bNeedClear := TRUE
+                if WORD[@currRawIntBits][srcWrdIdx] <> priorBits
+                    WORD[pResultWords][dstWrdIdx++] := WORD[@currRawIntBits][srcWrdIdx]
+                priorBits := WORD[@currRawIntBits][srcWrdIdx]
+            else
+                ' just cleared rising edge!
+        edgesCount := dstWrdIdx
+
+VAR
+
+    WORD newBit
+    WORD oldBit
+
+    WORD intRawCache[8]
+
+PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, currRawIntBits2, nBit, bitMask, tofIdx, bInterrupt, loadMask, edgesCount, cacheIdx, bHaveInt, bNeedClear, priorEdgesCount
 ' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
 '  our TOF sensor transition high-to-low is what we are looking for..
 '   we need to ignore the low-to-high changes
     bfoundAllReady := FALSE
-    if pcf8575.isIntPending()
-        currRawIntBits := pcf8575.getInputBits()    ' a read clears pending interrupts
-        if priorRawIntBits <> currRawIntBits
-            'debug("TSK: ints old=", ubin_word_(priorRawIntBits), ", new=", ubin_word_(currRawIntBits))
-            if currRawIntBits <> $0F00
-                ' INTb bits for our 4 TOF sensors 1-4 [LPn bits of Expander are 8-11]
-                repeat nBit from 8 to 11
-                    tofIdx := nBit - 8   ' now [0-3]
-                    bitMask := 1 << nBit ' shifted to 8-11
-                    loadMask := 1 << tofIdx
-                    oldBit :=  priorRawIntBits & bitMask
-                    newBit :=  currRawIntBits & bitMask
-                    ' if the bit changed and it's high to low
-                    bInterrupt := (newBit == 0 and newBit <> oldBit) ? TRUE : FALSE
-                    'debug(" INT: b", uhex_(nBit), " msk=", ubin_word_(bitMask), " ", udec(oldBit), udec(newBit), sdec(bInterrupt))
-                    if bInterrupt
-                        bIntPending |= loadMask
 
-                    ' on arrival of our 4th sensor data, do unloads!
-                    'if bInterrupt and tofIdx == LAST_SENSOR_IDX
-                    if bInterrupt and (bIntPending & $000f) == $000f
-                        'debug("TSK: #", udec_(tofIdx+1), " data rdy!")
-                        bfoundAllReady := TRUE
-            ' set new prior
-            priorRawIntBits := currRawIntBits
+    bHaveInt, edgesCount, bNeedClear := getAndClearInterrupt(@intRawCache, 4)
+    if bNeedClear
+        ' and check for 2nd close interrupt
+        priorEdgesCount := edgesCount
+        bHaveInt, edgesCount, bNeedClear := getAndClearInterrupt(@WORD[@intRawCache][edgesCount], 4)
+            edgesCount += priorEdgesCount
 
+    if edgesCount > 0
+        repeat cacheIdx from 0 to edgesCount - 1
+            currRawIntBits := WORD[@intRawCache][cacheIdx]
+            if priorRawIntBits <> currRawIntBits
+                'debug("TSK: ints old=", ubin_word_(priorRawIntBits), ", new=", ubin_word_(currRawIntBits))
+                if currRawIntBits <> $0F00
+                    ' INTb bits for our 4 TOF sensors 1-4 [LPn bits of Expander are 8-11]
+                    repeat nBit from 8 to 11
+                        tofIdx := nBit - 8   ' now [0-3]
+                        bitMask := 1 << nBit ' shifted to 8-11
+                        loadMask := 1 << tofIdx
+                        oldBit :=  priorRawIntBits & bitMask
+                        newBit :=  currRawIntBits & bitMask
+                        ' if the bit changed and it's high to low
+                        bInterrupt := (newBit == 0 and newBit <> oldBit) ? TRUE : FALSE
+                        'debug(" INT: b", uhex_(nBit), " msk=", ubin_word_(bitMask), " ", udec(oldBit), udec(newBit), sdec(bInterrupt))
+                        if bInterrupt
+                            bIntPending |= loadMask
 
-
+                        ' on arrival of our 4th sensor data, do unloads!
+                        'if bInterrupt and tofIdx == LAST_SENSOR_IDX
+                        if bInterrupt and (bIntPending & $000f) == $000f
+                            'debug("TSK: #", udec_(tofIdx+1), " data rdy!")
+                            bfoundAllReady := TRUE
+                ' set new prior
+                priorRawIntBits := currRawIntBits
 
 PRI configureVideoDisplays() | tofIdx, pTgtStatus8, pSmplDistanceMM16
     ' let's hand off data area pointers to our video subsystem
