@@ -96,7 +96,8 @@ PUB main() | drvrResponse
     ' if configure went OK
     if drvrResponse == tofSensor.DRVR_CMD_OK
         'drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 7)
-        drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 13)
+        'drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 13)
+        drvrResponse := tofSensor.setParameter(tofSensor.PID_RANGING_FREQUENCY, 1)  ' down to 1Hz while we get HDMI working
         ' if configure went OK
         if drvrResponse == tofSensor.DRVR_CMD_OK
 
