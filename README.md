@@ -39,8 +39,8 @@ All of our performance measurements are backed up with measurements taken with a
 On this Page:
 
 - [Driver Features](#features)
-- [The sensor object]()
-- [Using the sensor in your own Project]()
+- [The sensor object](#the-180-fov-tof-sensor-object-spin2)
+- [Using the sensor in your own Project](#using-the-180-fov-tof-sensor-object-in-your-own-project)
 - [How to contribute](#how-to-contribute)
 
 Additional pages:
