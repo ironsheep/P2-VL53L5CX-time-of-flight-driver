@@ -441,13 +441,19 @@ DAT
     bShowStartup    LONG    TRUE
     emptyLabel      BYTE    "      ",0
 
-PUB registerTofDataSet(tofIdx, imageWidth, pTgtStatus8, pDistanceMM16) | validIdx
+PUB registerTofDataSet(tofIdx, imageWidth, pTgtStatus8, pDistanceMM16) | validIdx, validWidth
+    ' do init on first entry
     if cntOfDataSets == 0
         longfill(@tofImageWidth, 0, 4)  ' preset to all empty so we can check if data arrived
         bytefill(@valueLabel, 0, 6)  ' preset to all empty so we have zero terminated string
 
     validIdx := 0 #> tofIdx <# 4
-    LONG[@tofImageWidth][validIdx] := imageWidth
+
+    validWidth := 4 #> imageWidth <# 8
+    if validWidth > 4 and validWidth < 8
+        validWidth := 8
+
+    LONG[@tofImageWidth][validIdx] := validWidth
     LONG[@pTofTgtStatus8][validIdx] := pTgtStatus8
     LONG[@pTofDistanceMM16][validIdx] := pDistanceMM16
     cntOfDataSets++

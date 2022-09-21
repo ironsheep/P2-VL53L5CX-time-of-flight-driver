@@ -99,7 +99,7 @@ OBJ { our sensors }
 pub null()
 '' This is not a top-level object
 
-CON ' -------------- SET UP --------------
+CON ' ----------------------- SET UP -----------------------
 
 PUB setHDMIBasePin(pHDMIbase)
 '' Assign pins to HDMI Eval Adapter
@@ -132,7 +132,7 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
         tvDebug.start(pinHDMIbase, @screenTitle)
 
         nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars := getDebugData()
-        debug("* Received: ", udec(nGroups), uhex_long(pGroupTitles), uhex_long(pGroupNames), uhex_long(pGroupVarCts), uhex_long(pGroupVars))
+        debug("180: Received: ", udec(nGroups), uhex_long(pGroupTitles), uhex_long(pGroupNames), uhex_long(pGroupVarCts), uhex_long(pGroupVars))
         tvDebug.registerDisplay(nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars)
     else
         showHDMIDebug := FALSE  ' force this off is not using HDMI
@@ -143,14 +143,14 @@ PUB start() : Ok | nGroups, pGroupTitles, pGroupNames, pGroupVarCts, pGroupVars,
     waitDriverStarted()
 
     ' tell driver to set-up bus 1
-    debug("* Loading Sensors")
+    debug("180: Loading Sensors")
     dvrCommand := DC_START
 
     nResponse := waitCommandComplete()
     if nResponse == DRVR_CMD_OK
-        debug("* Init Complete!")
+        debug("180: Init Complete!")
 
-    debug("* start up complete!")
+    debug("180: start up complete!")
 
 PUB stop()
 '' Stop our driver-Cog and all backend objects
@@ -159,14 +159,14 @@ PUB stop()
     debug("  -- waiting for driver shutdown")
     repeat until dvrCommand <> DC_STOP
 
-    debug("* is shutdown. Stopping all")
+    debug("180: is shutdown. Stopping all")
     ' stop our cog
     if cog
         cogstop(cog - 1)
         cog := 0
 
 
-CON ' -------------- COMMAND Interface --------------
+CON ' ---------------- COMMAND Interface ----------------
 
 PUB setParameter(nParmId, nParmValue) : nResponse | bError, bTimedOut
 '' set value for given parameter name
@@ -188,6 +188,10 @@ PUB getParameter(nParmId) : nResponse, nParmValue | bError, bTimedOut
 
 PUB enableRanging(bEnable) : nResponse | bError, bTimedOut  ' turn sensing on/off
 '' Enable(TRUE) or Disable(false) ranging
+    if bEnable
+        ' TOF sensors are running their code, now hook to display
+        configureVideoDisplays()
+
     dvrCommand := (bEnable) ? DC_ENABLE_RANGING : DC_DISABLE_RANGING
     ' wait for command to complete
     nResponse := waitCommandComplete()
@@ -198,7 +202,7 @@ PUB isRanging() : bRangingStatus
     bRangingStatus := drvrIsRanging
 
 
-CON ' -------------- PRIVATE (Utility) Methods --------------
+CON ' ------------- PRIVATE (Utility) Methods --------------
 
 PRI waitDriverStarted()
     debug("  -- waiting for driver started")
@@ -360,7 +364,7 @@ PRI handleDriverCommand(newCommand) | tofIdx, bDvcPresent, bCanGoIdle, eDvcStatu
                 else
                     waitms(10) ' delay to next start
                 ' read settings for display
-            loadSettings()
+            readDefaultSettings()
 
         DC_ENABLE_RANGING:
             debug("TSK: cmd enbl ranging")
@@ -435,7 +439,7 @@ PRI rptDriverFault(faultValue)
     debug("TSK:  -- ERR")
 
 
-PRI loadSettings() | eDvcStatus, readValue
+PRI readDefaultSettings() | eDvcStatus, readValue
 
     eDvcStatus, readValue := tofSensor[0].getRangingFrequencyHz()
     if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
@@ -464,19 +468,14 @@ PRI loadSettings() | eDvcStatus, readValue
     eDvcStatus, readValue := tofSensor[0].getResolution()
     if eDvcStatus == tofSensor.VL53L5CX_STATUS_OK
         resolution := readValue
+        setNewResolution(resolution)
 
+VAR { Interrupt handling support data }
 
-PRI doPendingUnloads() | tofIdx, bitsCopy, loadMask
-    ' process interupt pin values
-    if drvrIsRanging
-        bitsCopy := bIntPending
-        bIntPending := 0    ' clear so more can be recorded
-        repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
-            loadMask := 1 << tofIdx
-            ' if interrupt is pending for this sensor let's unload it
-            if bitsCopy & loadMask <> 0
-                ' YES unload data
-                tofSensor[tofIdx].unloadRangingData()
+    WORD newBit
+    WORD oldBit
+
+    WORD intRawCache[8]
 
 PRI getAndClearInterrupt(pResultWords, wordCount) : bHaveInt, edgesCount, bNeedClear | limitWordCount, srcWrdIdx, dstWrdIdx, WORD priorBits, WORD currRawIntBits[4]
     ' have INTb assert? (low?)
@@ -501,13 +500,6 @@ PRI getAndClearInterrupt(pResultWords, wordCount) : bHaveInt, edgesCount, bNeedC
             else
                 ' just cleared rising edge!
         edgesCount := dstWrdIdx
-
-VAR
-
-    WORD newBit
-    WORD oldBit
-
-    WORD intRawCache[8]
 
 PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, currRawIntBits2, nBit, bitMask, tofIdx, bInterrupt, loadMask, edgesCount, cacheIdx, bHaveInt, bNeedClear, priorEdgesCount
 ' NOTE: we get an interrupt for low-to-high as well as high-to-low transitions
@@ -549,15 +541,19 @@ PRI gatherInterruptInfo() : bfoundAllReady | currRawIntBits, currRawIntBits2, nB
                 ' set new prior
                 priorRawIntBits := currRawIntBits
 
-PRI configureVideoDisplays() | tofIdx, pTgtStatus8, pSmplDistanceMM16
-    ' let's hand off data area pointers to our video subsystem
-    repeat  tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
-        if tofSensor[0].isRanging()
-        pTgtStatus8, pSmplDistanceMM16 := tofSensor[tofIdx].targetBufferPointers()
-        debug("* set video #", udec_(tofIdx+1), ", ImgWdth: ", udec_(currentImageWidth))
-        tvDebug.registerTofDataSet(tofIdx, currentImageWidth, pTgtStatus8, pSmplDistanceMM16)
+PRI doPendingUnloads() | tofIdx, bitsCopy, loadMask
+    ' process interupt pin values
+    if drvrIsRanging
+        bitsCopy := bIntPending
+        bIntPending := 0    ' clear so more can be recorded
+        repeat tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
+            loadMask := 1 << tofIdx
+            ' if interrupt is pending for this sensor let's unload it
+            if bitsCopy & loadMask <> 0
+                ' YES unload data
+                tofSensor[tofIdx].unloadRangingData()
 
-DAT
+DAT { our I2C TOF sensor addresses }
     '                    TOF #   1    2    3    4
     '                I2C Bus #   2    2    1    1
     TOFdeviceAddrTbl   BYTE    $54, $56, $58, $5A
@@ -680,6 +676,9 @@ PRI handleSetupChange(nTofIdx, arg, argValue) : ok | eDvcStatus
         if eDvcStatus <> tofSensor.VL53L5CX_STATUS_OK
             ok := FALSE
 
+    if ok == TRUE and arg == PID_RESOLUTION
+        setNewResolution(argValue)
+
 PRI handleSetupQuery(nTofIdx, parmId) : ok, parmValue | eDvcStatus, valueRead
 ' query a single TOF sensor {nTofIdx} parameter {arg} and return the value read
     ok := TRUE
@@ -710,22 +709,34 @@ PRI handleSetupQuery(nTofIdx, parmId) : ok, parmValue | eDvcStatus, valueRead
         else
             parmValue := valueRead
 
+PRI setNewResolution(resolutionValue)
+' record new resolution value and inform others
+    currentResolution := resolutionValue
+    currentImageWidth := sqrt currentResolution
 
-CON { --- HDMI Debug Support --- }
+    ' FIXME: TODO - update display driver, too
+
+
+CON ' ---------------- HDMI Debug Support ----------------
+
+PRI configureVideoDisplays() | tofIdx, pTgtStatus8, pSmplDistanceMM16
+    ' let's hand off data area pointers to our video subsystem
+    repeat  tofIdx from FIRST_SENSOR_IDX to LAST_SENSOR_IDX
+        pTgtStatus8, pSmplDistanceMM16 := tofSensor[tofIdx].targetBufferPointers()
+        'debug("180: set video #", udec_(tofIdx+1), ", ImgWdth: ", udec_(currentImageWidth))
+        tvDebug.registerTofDataSet(tofIdx, currentImageWidth, pTgtStatus8, pSmplDistanceMM16)
 
 CON { Constants for HDMI Debug }
 
     DBG_GROUPS_CT = 2
     DBG_MAX_VARS_IN_GROUP = 7
 
-VAR { * Data Structure for HDMI Debug * }
+VAR { Data Structure for HDMI Debug }
 
     LONG    pTitlesAr[DBG_GROUPS_CT + 1]    ' first value is max vars
     LONG    pVarCtAr[DBG_GROUPS_CT]
     LONG    pNamesAr[DBG_GROUPS_CT * DBG_MAX_VARS_IN_GROUP]
     LONG    pValsAr[DBG_GROUPS_CT*DBG_MAX_VARS_IN_GROUP]
-
-
 
 DAT { Literals for HDMI Debug }
 
