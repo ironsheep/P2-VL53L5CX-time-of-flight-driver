@@ -15,7 +15,7 @@ Unlike conventional IR sensors, the VL53L5CX allows absolute distance measuremen
 Multizone distance measurements are possible up to 8x8 zones with a wide 63° diagonal FoV which can be reduced by software. The VL53L5CX is able to detect different objects within the FoV.
 
 <p align="center">
-  <img src="./Images/VL53L5CX-SATEL.webp" width="200"><br>
+  <img src="./Images/VL53L5CX-SATEL.webp" width="600"><br>
   <B>Shown: The Satel Breakout Board package</B>
 </p>
 
@@ -51,6 +51,7 @@ Latest Changes:
 
 ```
 10 Sep 2022
+- Ranging working
 - Full data arriving from TOF sensor correctly!
 6 Sep 2022
 - All public methods converted, now in midst of turning on ranging...
@@ -97,42 +98,43 @@ The programming interface to this driver is as follows:
 | | **-- General Setup --** 
 | start(pinINT, pinRST, pinSDA, pinSCL, pinLPN, pinPWREN) : bDevicePresent | Start the device running
 | stop() | Stop our i2c bus use and float all pins
-| isAlive() : eDvcStatus, bIsAlive | Returns {bIsAlive} when {eDvcStatus} == VL53L5CX\_STATUS\_OK</br>{bIsAlive} contains T/F (where T means the device was found on the i2c bus)</br>Alternatively returns {eDvcStatus}:</br>VL53L5CX\_STATUS\_ERROR - if there was an I2C communications error
-| setI2CAddress(i2cAddress) : eDvcStatus |Reconfigure device to respond to new i2c device address</br> Returns VL53L5CX_STATUS_OK if the sensor's address was correctly changed or VL53L5CX_STATUS_ERROR otherwise.
-| getI2CAddress() : nDvcI2CAddr |Return the current i2c device address (or DVC\_NOT\_FOUND if no device found on i2c bus)
-| | **-- Alternate Muli-Sensor Setup --** 
+| isAlive() : eDvcStatus, bIsAlive | Returns {bIsAlive} when {eDvcStatus} == `VL53L5CX_STATUS_OK`</br>{bIsAlive} contains T/F (where T means the device was found on the i2c bus)</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` - if there was an I2C communications error
+| setI2CAddress(i2cAddress) : eDvcStatus |Reconfigure device to respond to new i2c device address</br> Returns `VL53L5CX_STATUS_OK` if the sensor's address was correctly changed or `VL53L5CX_STATUS_ERROR` otherwise.
+| getI2CAddress() : nDvcI2CAddr |Return the current i2c device address (or `DVC_NOT_FOUND` if no device found on i2c bus)
+| | **-- Alternate Muli-Sensor Setup, when using driver COG --**</br>Use these instead of start()
 | setPinsAndID(pSDA, pSCL, nID) : ok |Record PINs for later Deferred Start [startUsingPins()] for use by driver cog
 | startUsingPins() : bDevicePresent | Deferred Start for use by driver cog</br>MUST be preceed by setPins()
 | activateSensor() : bDevicePresent |  Deferred Start for use by driver cog   MUST be preceed by setPins() and startUsingPins()
 | | **-- Configuration --** 
-| setRangingFrequencyHz(newFrequency8) : eDvcStatus
-| getRangingFrequencyHz() : eDvcStatus, frequencyHz8
-| setRangingMode(eRangingMode) : eDvcStatus
-| getRangingMode() : eDvcStatus, eRangingMode
-| setResolution(eResolution) : eDvcStatus
-| getResolution() : eDvcStatus, eResolution
-| setPowerMode(ePowerMode) : eDvcStatus
-| getPowerMode() : eDvcStatus, ePowerMode
-| setIntegrationTime(timeMsec32) : eDvcStatus
-| getIntegrationTime() : eDvcStatus, timeMsec32
-| setSharpenerPercent(percent8) : eDvcStatus
-| getSharpenerPercent() : eDvcStatus, percent8
-| setTargetOrder(eTargetOrder) : eDvcStatus
-| getTargetOrder() : eDvcStatus, eTargetOrder
+| setRangingFrequencyHz(newFrequency8) : eDvcStatus |  Configure sensor for a new ranging frequency in Hz {newFrequency8}</br>NOTE1: legal range in Hz varies by resolution: [4x4: 1-60 Hz, 8x8: 1-15Hz]</br> NOTE2: must be called after setRangingMode()</br>Returns `VL53L5CX_STATUS_OK` if the sensor's sampling frequency was changed.</br> Alternatively returns {eDvcStatus}:</br>`VL53L5C_STATUS_INVALID_PARAM` - then curr resolution is yet set or Hz value if out of range for resolution</br>`VL53L5CX_STATUS_ERROR` - if there was an I2C communications error
+| getRangingFrequencyHz() : eDvcStatus, frequencyHz8 | Returns the current ranging frequency {frequencyHz8} in Hz when {eDvcStatus} == `VL53L5CX_STATUS_OK`</br>Ranging frequency corresponds to the time between each measurement.</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` - if there was an I2C communications error
+| setRangingMode(eRangingMode) : eDvcStatus |  Configure sensor ranging mode: [`VL53L5CX_RANG_MODE_CONTINUOUS` or `VL53L5CX_RANG_MODE_AUTONOMOUS`]</br>Returns {eDvcStatus} of `VL53L5CX_STATUS_OK` if the sensor's ranging mode was changed.</br>Alternatively returns {eDvcStatus}:</br>`VL53L5C_STATUS_INVALID_PARAM` if not one of two expected values</br>`VL53L5CX_STATUS_ERROR` - if there was an I2C communications error
+| getRangingMode() : eDvcStatus, eRangingMode |  Return the sensors' current ranging mode when {eDvcStatus} is `VL53L5CX_STATUS_OK` {eRangingMode} will be set to [`VL53L5CX_RANG_MODE_CONTINUOUS` or `VL53L5CX_RANG_MODE_AUTONOMOUS`]</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| setResolution(eResolution) : eDvcStatus |  Set the sensors' resolution to [`VL53L5CX_RESOLUTION_4X4`, or `VL53L5CX_RESOLUTION_8X8`]</br>Returns {eDvcStatus} of `VL53L5CX_STATUS_OK` if the sensor's ranging resolution was changed</br>Alternatively returns {eDvcStatus}:</br> `VL53L5C_STATUS_INVALID_PARAM` if not one of two expected values</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| getResolution() : eDvcStatus, eResolution |  Return the sensors' currently configured ranging resolution when {eDvcStatus} is `VL53L5CX_STATUS_OK`</br>{nResolution8} will be set to [`VL53L5CX_RESOLUTION_4X4`, or `VL53L5CX_RESOLUTION_8X8`]</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_BAD_DATA` if an unexpected value was read from the sensor</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| setPowerMode(ePowerMode) : eDvcStatus |  Set the sensors' power-mode to [`VL53L5CX_POWER_MODE_SLEEP`, or `VL53L5CX_POWER_MODE_WAKEUP`]</br>Returns {eDvcStatus} of `VL53L5CX_STATUS_OK` if the sensor's power-mode was changed</br>Set the sensor in Low Power mode, for example if the sensor is not used during a long time.</br>The value `VL53L5CX_POWER_MODE_SLEEP` can be used to enable the low power mode.</br>To restart the sensor, use the value `VL53L5CX_POWER_MODE_WAKEUP`.</br>NOTE: Please ensure that the device is not streaming before calling the function.</br>Alternatively returns {eDvcStatus}:</br>`VL53L5C_STATUS_INVALID_PARAM` if not one of two expected values</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| getPowerMode() : eDvcStatus, ePowerMode |  Return the sensors' current power-mode when {eDvcStatus} is `VL53L5CX_STATUS_OK`</br>{ePowerMode} will be set to [`VL53L5CX_POWER_MODE_WAKEUP` or `VL53L5CX_POWER_MODE_SLEEP`]</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| setIntegrationTime(timeMsec32) : eDvcStatus |  Sets a new integration time in ms. [2ms <= {timeMsec32} <= 1000ms]</br>Returns {eDvcStatus} of `VL53L5CX_STATUS_OK` if the sensor's integration time was changed</br>NOTE: Integration time must be computed to be lower than the ranging period, for the selected resolution.</br>NOTE: that this setting has NO IMPACT on ranging mode continous.</br>Alternatively returns {eDvcStatus}:</br>`VL53L5C_STATUS_INVALID_PARAM` if not within the supported range</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| getIntegrationTime() : eDvcStatus, timeMsec32 | Return the sensors' currently configured integration time (in ms) when {eDvcStatus} is `VL53L5CX_STATUS_OK`</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| setSharpenerPercent(percent8) : eDvcStatus |  Sets a new sharpener value in percent. [0 <= {percent8} <= 99] - where 0 means disabled</br>Returns {eDvcStatus} of `VL53L5CX_STATUS_OK` if the sensor's sharpener value was changed.</br>Change to blur more or less zones depending upon the application</br>Alternatively returns {eDvcStatus}:</br> `VL53L5C_STATUS_INVALID_PARAM` if not within the supported range</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| getSharpenerPercent() : eDvcStatus, percent8 | Return the sensors' currently configured sharpener (in percent) when {eDvcStatus} is `VL53L5CX_STATUS_OK` value returned {percent8} will be [0 (disabled) to 99] percent.</br>NOTE: Sharpener can be changed to blur more or less zones depending of the application.</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| setTargetOrder(eTargetOrder) : eDvcStatus |  Set the sensors' target order to [`VL53L5CX_TGT_ORDER_CLOSEST`, or `VL53L5CX_TGT_ORDER_STRONGEST`]</br>Returns {eDvcStatus} of `VL53L5CX_STATUS_OK` if the sensor's target order was changed</br>NOTE: By default, the sensor is configured with the strongest output.</br>Alternatively returns {eDvcStatus}:</br>`VL53L5C_STATUS_INVALID_PARAM` if not within the supported range</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| getTargetOrder() : eDvcStatus, eTargetOrder |  Return the sensors' currently configured target order when {eDvcStatus} is `VL53L5CX_STATUS_OK`</br>{eTargetOrder} will be set to [`VL53L5CX_TGT_ORDER_CLOSEST` or `VL53L5CX_TGT_ORDER_STRONGEST`]</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_BAD_DATA` if an unexpected value was read from the sensor</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
 | | **-- Ranging Control --** 
-| startRanging() : eDvcStatus
-| stopRanging() : eDvcStatus
-| isRanging() : bSensorRanging
+| startRanging() : eDvcStatus |  Starts a ranging session.</br>NOTE: When the sensor is streaming, user cannot change settings 'on-the-fly'.</br>Returns `VL53L5CX_STATUS_OK` if the start ranging command was acknowledged by the sensor or `VL53L5CX_STATUS_ERROR` otherwise.
+| stopRanging() : eDvcStatus | Stops the ranging session. It must be used when the sensor is streaming, after calling startRanging().</br>Returns `VL53L5CX_STATUS_OK` if the stop ranging command was acknowledged by the sensor or `VL53L5CX_STATUS_ERROR` otherwise.
+| isRanging() : bSensorRanging | Return T/F where T means the sensor is actively ranging
 | | **-- Handling Ranging Data --** 
-| didInterrupt() : bPinState
-| isDataReadyToUnload() : eDvcStatus, bDataReady
-| unloadRangingData() : eDvcStatus, bDataReturned
-| targetBufferPointers() : pTgtStatus8, pDistanceMM16
-| sampleDistanceMM(index) : nValue16
-| sampleReflectance(index) : nValue8
-| sampleTargetStatus(index) : nValue8
-| sampleNbTgtDetected(index) : nValue8
+| didInterrupt() : bPinState | Return interpreted value of Interrupt pin where 1 = TRUE (did interrupt), 0 = FALSE (did not)
+| isDataReadyToUnload() : eDvcStatus, bDataReady | Check sensor by polling i2c. Return T/F (where T means data is ready) when {eDvcStatus} is `VL53L5CX_STATUS_OK`</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| unloadRangingData() : eDvcStatus, bDataReturned |  Retrieve ranging data from the sensor.</br>Return T/F (where T means data was retrieved) when {eDvcStatus} is `VL53L5CX_STATUS_OK`</br>Alternatively returns {eDvcStatus}:</br>`VL53L5CX_STATUS_ERROR` if there was an i2c i/o error
+| targetBufferPointers() : pTgtStatus8, pDistanceMM16 |  Return pointers to internal data arrays</br>that is: </br>`@DistanceMM[0] (WORD[])` and </br>`@TargetStatus[0] (BYTE[])`
+| sampleDistanceMM(index) : nValue16 | --TBA--
+| sampleReflectance(index) : nValue8 | --TBA--
+| sampleTargetStatus(index) : nValue8 | --TBA--
+| sampleNbTgtDetected(index) : nValue8 | --TBA--
 
+**NOTE:** *We're stopping here with adding method details. We are still working on how best to do unloads and how best to make the data avaialable.  We'll add more here as we are satisfyed the new interface.*
 
 ### Files
 
@@ -175,6 +177,55 @@ Of course you can adjust these assignments. Adjust the follwing constants within
 
 ## Using the VL53L5CX object in your own project
 
+Include the object in your project:
+
+```
+OBJ { our sensors }
+
+    tofSensor   : "isp_vl53l5cx"                      ' our TOF Sensor
+```
+
+Start the object:
+
+```
+    ' find and configure our pcf8575 device
+    bDevicePresent := tofSensor.start(PIN_TOF_INT, PIN_TOF_RST, PIN_TOF_SDA, PIN_TOF_SCL, PIN_TOF_LPN, PIN_TOF_PWREN)  ' i2c @ 1Mz
+```
+
+See if it is present on the I2C bus:
+
+```
+        addrFound := tofSensor.getI2CAddress()
+        if(addrFound <> tofSensor.DVC_NOT_FOUND)
+            ... ' its there!
+```
+
+Now interact with the device to your hearts' content:
+
+For example:
+
+```
+        tofSensor.setResolution(tofSensor.`VL53L5CX_RESOLUTION_8X8`)
+
+        tofSensor.startRanging()
+
+        ' test for data ready
+         eDvcStatus, bDataReturned := tofSensor.isDataReadyToUnload()
+            if bDataReturned
+              ....
+              
+        ' unlod the data
+        eDvcStatus, bDataUnloaded := tofSensor.unloadRangingData()     ' load distance data
+        if bDataUnloaded
+           ...
+           
+        ' when done
+        tofSensor.stopRanging() ' if you don't, you'll have to power off the sensor before you can control again...
+        
+        tofSensor.stop()     ' to release the pins in use
+```
+
+That's all there is. It's pretty simple to use...
 
 
 ---
