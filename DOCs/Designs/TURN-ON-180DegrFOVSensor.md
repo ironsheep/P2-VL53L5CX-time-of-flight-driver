@@ -53,6 +53,8 @@ Here's the proof that this is all happening as expected:
   <B>After we can address the 4 sensors we can now load firmware into each and then configure the ranging settings we</BR>want to use. Just before configuring the sensors, we query one of them to get all 6 default configuration values.</B>
 </p>
 
+### Turning on Ranging
+
 Now since this is all about ranging let's get Ranging working:
 
 <p align="center">
@@ -82,11 +84,56 @@ With pull-up resistor added to the prototype, here's what I'm now seeing for the
 
 The interrupts are working now, how are we going to have to respond to them? We see groups of 4 interrupts occurring about 1 second apart. This is our four sensors asked to range at once per second (at 1 Hz). They individually report as each comes ready and they are reporting in the same order that they were asked to start ranging. We also see that the VL53L5CX devices assert their interupt for only 100 uSec. We also see that the PCF8575 device is also only holding the interrupt present for the same amount of time.  So, we need a fast mechanism that will detect and then record the fact that a device has interrupted. This should run at a fast enough rate so that we don't miss interrupts when ranging at the highest frequency we want to support (device capabilities: 1-15 Hz at 8x8, 1-60Hz at 4x4.) My goal will be to measure what frequencies we can support in this configuration with the P2.
 
-### Watch this space
+### Unloading based on interrupt notification
 
-Ok know you know where I am, the progress I've made. I'm next working on the interrupt handling code. This is a bit more challenging and fun as the interrupts are present for 100 uSec. from each device. I'm polling the INTb pin on the PCF8575 to reduce i2c traffic. Once we see an interrupt we have to quickly ask the PCF8575 which device it was as you can see, it too, is only showing the interrupt for the same 100 uSec.
+So I initially turn on interupts by waiting for the PCF8575 INTb line to be asserted, then ask it for the 16-bit word that represents the state of all 16 I/O pins. Four of these (8-11) are our interrupt bits.  We know that the PCF8575 is somewhat unusual in that it will assert INTb for either falling or rising edges. So we need software to filter-out the rising edge notifications since we only care about falling edges.  Every time we issue a read to the PCF8575 we acknowledge the interrupt and the INTb line is de-asserted. So as soon as I turn on this first part I get a new behavior.  That is: A TOF sensor asserts INTb, the PCF8575 sees it and asserts its own INTb, we read the port bits (to see which it was) whcih clears the interrupt and voila another interrupt is asserted!  Yep, this is our rising edge of the TOF sensor line.  If we don't also acknowledge this as well, this assertion can block our being notified of new interrupts as seen here:
 
-So... watch this space...   ;-)
+<p align="center">
+  <img src="../../Images/Sensor180TOF-badInterruptsRisingEdge.png" width="800"><br>
+  <B>BUG: Missing notification of new interrupt due to NOT clearing the rising edge interrupt</B>
+</p>
+
+The next issue I encountered was the individual byte reads over I2C were are slower than block reads so we have a lower limit on the imterrupt rate we can respond too.  By reading the port bits with a much smaller gap in time between bytes we can service intrrupts which are closer together. Of course there is a practical limit to this hardware (PCF8575 fronting for our VL53L5CX's) which we can't exceed. But let's do our best!  
+
+It turns out that two things can benefit us here. (1) if we do block-reads then we have the smallest gap between bytes read and (2) if we read more than 16bits from the PCF8575 it just wraps around and gives us the same bytes again. So we can ask for a word read and get our 16 bits. We can ask for 2 word reads and the the same 16 bits read twice much more rapidly than if we asked for two single-word reads since they are now a single I2C read-block transaction.  
+
+So, I studied at our timing. Single interrupts at 100 uSec assertion can be read and cleared by doing a 4-word read (read the 16 bits. 4 times.)  This is a big win! single I2C transaction reads and clears both edges! But, there is one more enhancement. Occasionally a 2nd interrupt can get really close so, in the 4 word read case, the 4th word can end up being a new TOF INTb assertion. So, easy, we watch for this unusual case and do another 4 word read if the word was an interrupt to get and clear any more notifications.  It turns out that this change in acknowleging interrupts is sufficient enough to go from 3-Hz to 7-HZ ranging frequency with our 180° sensor!  A big win!  Here's this new INTb ack with 2nd read in action:
+
+<p align="center">
+  <img src="../../Images/Sensor180TOF-newInterruptMech.png" width="800"><br>
+  <B>FIXED: New 4-word read mechanism for acknowledging interrupts</B>
+</p>
+
+**NOTE:** the interrupt service routine code returns all new assertions seen with each 4-word read. If it does a 2nd 4-word read it returns all found in that as well. The routine also recognizes multiple bit assertions within each word.  We don't miss much with this new mechanism.  ;-)
+
+
+### Measuring Performance of new INT based unloads
+
+Ok, now that this is all working I took time to experiment with how fast we can run (what sampling frequency can we sustain wiht out missing unloads) at each of our two resolutions (4x4 and 8x8)  Ti turns out the we now can do:
+
+- Full 180° frame unloads: 4x4 resolution at 12 Hz (12 full frames every second) - A new frame every  83 mSec.!
+- Full 180° frame unloads: 8x8 resolution at 7 Hz (7 full frames every second) - A new frame every 143 mSec.!
+
+And here's what the sytem looks like for each:
+
+<p align="center">
+  <img src="../../Images/Sensor180TOF-4x4at12Hz.png" width="800"><br>
+  <B>FINAL: interrupt-based unloads of 4x4 resolution at 12 Hz</B>
+</p>
+
+
+<p align="center">
+  <img src="../../Images/Sensor180TOF-8x8at7hz.png" width="800"><br>
+  <B>FINAL: interrupt-based unloads of 8x8 resolution at 7 Hz</B>
+</p>
+
+There you are! We have working proven hardware and code with good verification by using our Logic Analyzer to see all the signalling between our prototype hardware and the P2.
+
+### Turned on, what's next?
+
+Ok, well, this is it for turning on the hardware.  Next i'm on to getting full visualizing of the sensed data on our HDMI display. Then lastly, I'll be adding routines to provide a list of blocked path areas from the sensed data so this code can be somting we integrate on our robot patforms very easily.
+
+So... watch for the appearance of an upcoming viualization page where I describe the my efforts of characterizing our full 180° Field of View Time-of-Flight sensor.
 
 ---
 
