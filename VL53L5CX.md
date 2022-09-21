@@ -79,9 +79,9 @@ Things we know about that still need attention:
 
 ### Features
 
-This driver object provides 
+This .spin2 driver object, as ported, provides full access all methods of the reference driver. Compile-time controls of the original referencedriver are now mostly runtime configuration determined by values assigned to constants. In the end, all controls over driver configuration are present as they were in the reference "C" driver source.  Therefore the User Manual for the reference driver pretty much pertains to our driver as well. How you make the adjustments cited in the User Manual may be slightly different but you can make them to get the desired changes in driver behavior.  The manual for the driver is found in the DOCs section of this repository.  See "**Additional Pages**" in the **Table of Contents** (above.)
 
-### Timings
+### Timings (TBA)
 
 This driver has been measured using a logic analyzer and is currently achieving the following:
 
@@ -134,7 +134,9 @@ The programming interface to this driver is as follows:
 | sampleTargetStatus(index) : nValue8 | --TBA--
 | sampleNbTgtDetected(index) : nValue8 | --TBA--
 
-**NOTE:** *We're stopping here with adding method details. We are still working on how best to do unloads and how best to make the data avaialable.  We'll add more here as we are satisfyed the new interface.*
+**NOTE1:** *There are many adjustable values in the driver. Refer to the User Manual (Table of Contents (Above)) and to the sections in the source file `isp_vl53l5cx.spin2` entitled: `Tunable DRIVER CONSTANTs` and `Tunable DRIVER DATA`
+
+**NOTE2:** *We're stopping here with adding method details. We are still working on how best to do unloads and how best to make the data avaialable.  We'll add more here as we are satisfyed the new interface.*
 
 ### Files
 
@@ -144,15 +146,24 @@ This driver has its own top-level demo. The files involved are:
 | --- | --- |
 | demo_vl53l5cx.spin2 | Top level demo file |
 | isp_vl53l5cx.spin2 | The P2 driver |
+|  --------- | **-- Underlying Files--** |
 | isp_i2c.spin2 | Underlying i2c driver  tuned for 1Mbit xfers |
+|  --------- | **-- HDMI Files--** |
+| isp\_hdmi_debug.spin2 | HDMI Display manager for Monitoring the 4 x TOF sensors |
+| p2videodrv.spin2 | VGA/DVI/TV graphics and text mode video driver 
+| p2textdrv.spin2 | VGA/DVI text mode interface for video driver 
+| p2font16 | fonts for HDMI
 
 
 ### Demo Configuration
 
 As written the demo assigned the following pins to communicate with the board. 
 
-| P2 PIN | Satel Board Connector | Purpose | Direction
+| P2 PIN(s) | Satel Board Connector | Purpose | Direction
 | --- | ---| ---| ---|
+| | **-- HDMI --**
+| 8-15 | DVI Eval Board | | In/Out
+| | **-- the VL53L5CX Sensor --**
 | 16 | INT | interrupt | In
 | 17 | I2C_RST | i2c I/F reset | In
 | 18 | SDA | data| In/Out

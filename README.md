@@ -150,8 +150,8 @@ This driver has its own top-level demo. The files involved are:
 | isp_i2c.spin2 | Underlying standard i2c driver |
 |  --------- | **-- HDMI Files--** |
 | isp\_hdmi_debug.spin2 | HDMI Display manager for Monitoring the 4 x TOF sensors |
-| p2videodrv.spin2 | basic video methods
-| p2textdrv.spin2 | Text methods for HDMI
+| p2videodrv.spin2 | VGA/DVI/TV graphics and text mode video driver 
+| p2textdrv.spin2 | VGA/DVI text mode interface for video driver 
 | p2font16 | fonts for HDMI
 
 
@@ -159,7 +159,7 @@ This driver has its own top-level demo. The files involved are:
 
 As written the demo assigned the following pins to communicate with the board. 
 
-| P2 PIN | Board Connector | Purpose | Direction
+| P2 PIN(s) | Board Connector | Purpose | Direction
 | --- | ---| ---| ---|
 | | **-- HDMI --**
 | 8-15 | DVI Eval Board | | In/Out
