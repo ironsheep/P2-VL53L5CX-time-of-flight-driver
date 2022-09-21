@@ -12,17 +12,16 @@ The following documents are found in this repo (this driver is inteded to suppor
 
 | Filename | Purpose | Description 
 | --- | --- | --- | 
-| [vl53l5cx.pdf](vl53l5cx.pdf) | Device: TOF Sensor | **Product data sheet**: DS13754 - Rev 8, 38 pgs
-| [vl53l5cx-satel.pdf](vl53l5cx-satel.pdf) | Breakout Board | **Data brief**: DB4506 - Rev 1, 5 pgs
-| [STMicro driver UM](um2884-use-vl53l5cx-with-ultra-lite-driver-sw.pdf) | User Manual | **User Manual** A guide to using the VL53L5CX multizone Time-of-Flight ranging sensor with wide field of view Ultra Lite Driver (ULD): UM2884 - Rev 2 - Aug 2021<BR><BR>This is provided as it is a good reference for adjusting configuration of our own P2 (.spin2) driver. 
-| [PCF8575.pdf](PCF8575.pdf) | Device: I2C I/O Expander | **Product data sheet** 07 Apr 1997
+| [vl53l5cx.pdf](vl53l5cx.pdf) | Device: TOF Sensor | **Product data sheet**: DS13754 - Rev 8 - 38 pgs
+| [vl53l5cx-satel.pdf](vl53l5cx-satel.pdf) | Breakout Board | **Data brief**: DB4506 - Rev 1 - 5 pgs
+| [STMicro driver UM](um2884-use-vl53l5cx-with-ultra-lite-driver-sw.pdf) | User Manual | **User Manual** A guide to using the VL53L5CX multizone Time-of-Flight ranging sensor with wide field of view Ultra Lite Driver (ULD): UM2884 - Rev 2 - 19 pgs - Aug 2021<BR><BR>This is provided as it is a good reference for adjusting configuration of our own P2 (.spin2) driver. 
+| [PCF8575.pdf](PCF8575.pdf) | Device: I2C I/O Expander | **Product data sheet**: PCF8575 Remote 16-bit I/O expander for I2C-bus - 24 pgs - 07 Apr 1997
 
-
+**NOTE**: these we placed here at the time this repo was created and were used to guide the driver implementation for these devices. There may be new version at the Philips (PCF8575) and STMicroelectronics websites - *the best way to find out if there are is to do your own google search.*
 
 Additional pages:
 
 - [Top README](https://github.com/ironsheep/P2-VL53L5CX-time-of-flight-driver) - Return to the top-level README for this repository
-
 
 
 ---
