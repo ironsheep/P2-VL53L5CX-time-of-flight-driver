@@ -79,7 +79,7 @@ Things we know about that still need attention:
 
 ### Features
 
-This .spin2 driver object, as ported, provides full access all methods of the reference driver. Compile-time controls of the original referencedriver are now mostly runtime configuration determined by values assigned to constants. In the end, all controls over driver configuration are present as they were in the reference "C" driver source.  Therefore the User Manual for the reference driver pretty much pertains to our driver as well. How you make the adjustments cited in the User Manual may be slightly different but you can make them to get the desired changes in driver behavior.  The manual for the driver is found in the DOCs section of this repository.  See "**Additional Pages**" in the **Table of Contents** (above.)
+This .spin2 driver object, as ported, provides full access all methods of the reference driver. Compile-time controls of the original reference driver are now mostly runtime configuration determined by values assigned to constants or initialized-data variables. In the end, all controls over driver configuration are present as they were in the reference "C" driver source.  Therefore the User Manual for the reference driver pretty much pertains to our driver as well. How you make the adjustments cited in the User Manual may be slightly different but you can make them to get the desired changes in driver behavior.  The manual for the driver is found in the DOCs section of this repository.  See "**Additional Pages**" in the **Table of Contents** (above.)
 
 ### Timings (TBA)
 
